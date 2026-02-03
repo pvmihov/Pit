@@ -1,0 +1,9 @@
+My idea for index is that it is going to be in text form.
+First it includes the number of files
+121
+Each file has the following structure
+<full_path_and_name>(='/open/hi.txt') <blob_name>(=c22b5f9178342609428d6f51b2c5af4c0bde6a42) <exists>(=True or False) <changed>
+
+Then is the number of directories
+Each directory has the following structure
+<full_path>(='/open') <tree_name>(=c22b5f9178342609428d6f51b2c5af4c0bde6a42)
