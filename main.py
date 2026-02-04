@@ -52,13 +52,14 @@ def find_index(index,num_blobs,file_name):
     return l
 
 def decompress_index(index_file):
+    #takes index_file which is Path object of the index, and returns the array of lines
     with index_file.open('rb') as index_opened:
         index_compressed = index_opened.read()    
     index_content = zlib.decompress(index_compressed)
     index_text = index_content.decode('utf-8')
     index = index_text.split('\n')
+    index.pop()
     return index
-
 
 def add_file(root_dir,file):
     #runs command pit add file
@@ -90,7 +91,7 @@ def add_file(root_dir,file):
             new_index_text = str(num_blobs+1)+'\n'
             for i in range(1,creation+1): new_index_text+=(index[i]+'\n')
             new_index_text+=(file_name+' '+hash+' True True\n')
-            for i in range(creation+1,len(index)-1): new_index_text+=(index[i]+'\n')
+            for i in range(creation+1,len(index)): new_index_text+=(index[i]+'\n')
             new_index_bytes = new_index_text.encode('utf-8')
             new_index_compressed = zlib.compress(new_index_bytes)
             index_file.write_bytes(new_index_compressed)   
@@ -104,7 +105,7 @@ def add_file(root_dir,file):
             cur_position_split[1]=hash
             index[position]=cur_position_split[0]+' '+cur_position_split[1]+' True True'
             new_index_text = ''
-            for i in range(0,len(index)-1): new_index_text+=(index[i]+'\n')
+            for tex in index: new_index_text+=(tex+'\n')
             new_index_bytes = new_index_text.encode('utf-8')
             new_index_compressed = zlib.compress(new_index_bytes)
             index_file.write_bytes(new_index_compressed)
@@ -120,7 +121,7 @@ def add_file(root_dir,file):
         if cur_position_split[2] != 'False' or cur_position_split[2]!='True':
             new_index_text = ''
             index[position]=cur_position_split[0]+' '+cur_position_split[1]+' '+'False'+' '+'True'
-            for i in range(0,len(index)-1): new_index_text+=(index[i]+'\n')
+            for tex in index: new_index_text+=(tex+'\n')
             new_index_bytes = new_index_text.encode('utf-8')
             new_index_compressed = zlib.compress(new_index_bytes)
             index_file.write_bytes(new_index_compressed)
