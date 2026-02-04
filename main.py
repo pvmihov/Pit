@@ -35,7 +35,7 @@ def init(project_dir):
     HEAD_file = dot_pit_folder / 'HEAD'
     HEAD_file.open('w')
     index_file = dot_pit_folder / 'index'
-    compresed_info = zlib.compress(b'0 0')
+    compresed_info = zlib.compress(b'0\n0\n')
     index_file.write_bytes(compresed_info)
     return True
 
@@ -44,22 +44,28 @@ def find_index(index,num_blobs,file_name):
     l=0
     r=num_blobs+1
     while l<r-1:
-        mid=(l+r)/2
-        actual_pos = 1+4*(mid-1)
-        if index[actual_pos]<file_name: l=mid
+        mid=int((l+r)/2)
+        splited = index[mid].split()
+        name = splited[0]
+        if name<=file_name: l=mid
         else: r=mid
     return l
+
+def decompress_index(index_file):
+    with index_file.open('rb') as index_opened:
+        index_compressed = index_opened.read()    
+    index_content = zlib.decompress(index_compressed)
+    index_text = index_content.decode('utf-8')
+    index = index_text.split('\n')
+    return index
+
 
 def add_file(root_dir,file):
     #runs command pit add file
     #receives a path object called file and changes the index accordingly
     project_dir = root_dir.parent
     index_file = root_dir / 'index'
-    with index_file.open('rb') as index_opened:
-        index_compressed = index_opened.read()    
-    index_content = zlib.decompress(index_compressed)
-    index_text = index_content.decode('utf-8')
-    index = index_text.split()
+    index = decompress_index(index_file)
     num_blobs = int(index[0])
     file_name = str(file)
     name_dir = str(project_dir)
@@ -74,43 +80,47 @@ def add_file(root_dir,file):
             creation = 0
         else: 
             position = find_index(index,num_blobs,file_name)
-            if position==0 or index[position*4+1] != file_name:
+            if position==0:
+                creation = position
+            cur_position_split = index[position].split()
+            if cur_position_split[0]!=file_name: 
                 creation = position
         if creation!=-1:
             #this means we have to create the file
-            new_index_text = ''
-            new_index_text+=str(num_blobs+1)+' '
-            for i in range(0,creation):
-                new_index_text+=index[i*4+1]+' '
-                new_index_text+=index[i*4+2]+' '
-                new_index_text+=index[i*4+3]+' '
-                new_index_text+=index[i*4+4]+' '
-            new_index_text+=file_name+' '
-            new_index_text+=hash+' '
-            new_index_text+='True '
-            new_index_text+='True '
-            for i in range(creation,num_blobs):
-                new_index_text+=index[i*4+1]+' '
-                new_index_text+=index[i*4+2]+' '
-                new_index_text+=(index[i*4+3]+' ')
-                new_index_text+=(index[i*4+4]+' ')
-            for i in range(num_blobs*4+1,len(index)):
-                new_index_text+=(index[i]+' ')
+            new_index_text = str(num_blobs+1)+'\n'
+            for i in range(1,creation+1): new_index_text+=(index[i]+'\n')
+            new_index_text+=(file_name+' '+hash+' True True\n')
+            for i in range(creation+1,len(index)-1): new_index_text+=(index[i]+'\n')
             new_index_bytes = new_index_text.encode('utf-8')
             new_index_compressed = zlib.compress(new_index_bytes)
-            index_file.write_bytes(new_index_compressed)            
+            index_file.write_bytes(new_index_compressed)   
+        else:
+            #this means file is in the index at line, position
+            cur_position_split = index[position].split()
+            if cur_position_split[1]==hash:
+                #means nothing was changed, so we shouldnt change nothing
+                return
+            #here the file was actually changed
+            cur_position_split[1]=hash
+            index[position]=cur_position_split[0]+' '+cur_position_split[1]+' True True'
+            new_index_text = ''
+            for i in range(0,len(index)-1): new_index_text+=(index[i]+'\n')
+            new_index_bytes = new_index_text.encode('utf-8')
+            new_index_compressed = zlib.compress(new_index_bytes)
+            index_file.write_bytes(new_index_compressed)
     else:
         #means file was deleted
         #we want to change exist property to false and changed property to true
         if num_blobs == 0: return # there arent blobs, so 
         position = find_index(index,num_blobs,file_name)
-        if position==0 or index[(position-1)*4+1] != file_name: return #the file wasnt in the index, so no need to do anything
+        if position==0: return #the file wasnt in the index, so no need to do anything
+        cur_position_split = index[position].split()
+        if cur_position_split[0]!=file_name: return #the file wasnt in the index
         #if we are here this means that the file is actually in index and we need to change the information
-        if index[(position-1)*4+3] != 'False' and index[(position-1)*4+4]!='True':
-            index[(position-1)*4+3] = 'False'
-            index[(position-1)*4+4] = 'True'
+        if cur_position_split[2] != 'False' or cur_position_split[2]!='True':
             new_index_text = ''
-            for tex in index: new_index_text+=(tex+' ')
+            index[position]=cur_position_split[0]+' '+cur_position_split[1]+' '+'False'+' '+'True'
+            for i in range(0,len(index)-1): new_index_text+=(index[i]+'\n')
             new_index_bytes = new_index_text.encode('utf-8')
             new_index_compressed = zlib.compress(new_index_bytes)
             index_file.write_bytes(new_index_compressed)
