@@ -1,3 +1,4 @@
+Index Structure
 My idea for index is that it is going to be in text form.
 First it includes the number of files
 121
@@ -7,3 +8,18 @@ Each file has the following structure
 Then is the number of directories
 Each directory has the following structure
 <full_path>(='/open') <tree_name>(=c22b5f9178342609428d6f51b2c5af4c0bde6a42)
+
+
+Tree Structure:
+<Name>
+<Number of files>
+....<Name of File> <Blob Name>
+<Number of trees>
+....<Name of Tree> <Tree Name>
+
+Commit Structure:
+<Message as text, no new lines>
+<Father>
+<Head Tree>
+<Number of changes>
+...<Change Name> <exists>
