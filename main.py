@@ -167,7 +167,7 @@ def create_tree(root_dir,tree_info):
     blob.write_bytes(compressed_data)
     return hash
 
-def commit(root_dir,commit_message):
+def commit(root_dir,commit_message): ###there is a huge error in the commit. When a file is added inside more than one folder that doesnt exist, it crashes
     #commits the changes in index
     project_dir = root_dir.parent
     index_file = root_dir / 'index'
@@ -250,7 +250,146 @@ def commit(root_dir,commit_message):
     commit_hash = create_tree(root_dir=root_dir,tree_info=commit_info)
     branch_head.write_text(commit_hash)
 
+def log(root_dir):
+    #returns information for all previous commits in current branch
+    index_file = root_dir / 'index'
+    index = decompress_index(index_file)
+    head_file = root_dir / 'HEAD'
+    with head_file.open('rb') as head_opened:
+        cur_branch = head_opened.read()
+    cur_branch = cur_branch.decode('utf-8')
+    branch_head = root_dir / 'refs' / 'heads' / cur_branch
+    with branch_head.open('rb') as branch_head_opened:
+        last_commit = branch_head_opened.read()
+    last_commit = last_commit.decode('utf-8')
+    log_text = ''
+    while last_commit!='-':
+        commit_file = root_dir / 'objects' / last_commit
+        with commit_file.open('rb') as commit_file_opened:
+            commit_compressed = commit_file_opened.read()
+        commit_text = zlib.decompress(commit_compressed).decode('utf-8')
+        commit_info = commit_text.split('\n')
+        commit_info.pop()
+        log_text+='Commit name:'+last_commit+'\n'
+        log_text+='Commit message:'+commit_info[0]+'\n'
+        changed = 0
+        removed = 0
+        for i in range(4,len(commit_info)):
+            spl = commit_info[i].split()
+            if spl[1]=='True': changed+=1
+            else: removed+=1
+        log_text+='Changed '+str(changed)+' files.\n'
+        log_text+='Removed '+str(removed)+' files.\n'
+        log_text+='\n\n'
+        last_commit=commit_info[1]
+    return log_text
 
+class UnableToRetrieve(Exception):
+    def __init__(self, message):
+        self.message = message
+        super().__init__(message)
+
+def find_file(root_dir,cur_tree,file_name):
+    tree_file = root_dir / 'objects' / cur_tree
+    with tree_file.open('rb') as tree_file_opened:
+        tree_compr = tree_file_opened.read()
+    tree_text = zlib.decompress(tree_compr).decode('utf-8')
+    tree_info = tree_text.split('\n')
+    tree_info.pop()
+    num_files = int(tree_info[1])
+    if get_folder(file_name)==tree_info[0]:
+        #this means we are searching for the file itself in the list of files
+        for i in range(2,2+num_files):
+            spl = tree_info[i].split()
+            if spl[0]!=file_name: continue
+            file = root_dir / 'objects' / spl[1]
+            with file.open('rb') as file_opened:
+                file_compr = file_opened.read()
+            file_bytes = zlib.decompress(file_compr)
+            return file_bytes
+        return False
+    else:
+        #this means we are searching for a folder inside the list of folders
+        num_folders = int(tree_info[2+num_files])
+        for i in range(3+num_files,3+num_files+num_folders):
+            spl = tree_info[i].split()
+            if file_name.startswith(spl[0]):
+                return find_file(root_dir,spl[1],file_name)
+        return False
+
+def retrieve(root_dir,commit_name,file_name,create,create_place):
+    #finds the file with file_name and the version it had after commit_name
+    #if create is true, it creates the file in create_place
+    #else it just returns the value as bits
+    head_file = root_dir / 'HEAD'
+    with head_file.open('rb') as head_opened:
+        cur_branch = head_opened.read()
+    cur_branch = cur_branch.decode('utf-8')
+    branch_head = root_dir / 'refs' / 'heads' / cur_branch
+    with branch_head.open('rb') as branch_head_opened:
+        last_commit = branch_head_opened.read()
+    last_commit = last_commit.decode('utf-8')
+    log_text = ''
+    if commit_name=='last': commit_name=last_commit
+    while last_commit!=commit_name:
+        if last_commit=='-':
+            raise UnableToRetrieve('There is no commit called '+commit_name+' in '+cur_branch+' branch.\n')
+        commit_file = root_dir / 'objects' / last_commit
+        with commit_file.open('rb') as commit_file_opened:
+            commit_compressed = commit_file_opened.read()
+        commit_text = zlib.decompress(commit_compressed).decode('utf-8')
+        commit_info = commit_text.split('\n')
+        last_commit = commit_info[1]
+    commit_file = root_dir / 'objects' / last_commit
+    with commit_file.open('rb') as commit_file_opened:
+        commit_compressed = commit_file_opened.read()
+    commit_text = zlib.decompress(commit_compressed).decode('utf-8')
+    commit_info = commit_text.split('\n')
+    cur_tree = commit_info[2]
+    file_content = find_file(root_dir,cur_tree,file_name)
+    if file_content == False:
+        raise UnableToRetrieve('There is no file '+file_name+' in the repository of commit '+commit_name+'.\n')
+    if create: create_place.write_bytes(file_content)
+    return file_content
+
+class UncommitedChanges(Exception):
+    def __init__(self, message):
+        self.message=message
+        super().__init__(message)
+
+def checkout(root_dir,branch_name):
+    #switches to another branch, if it doesnt exist it creates it
+    #returns False when it creates a new branch, and True when it changes to an existing one
+
+    index_file = root_dir / 'index'
+    index = decompress_index(index_file)
+    num_blobs = int(index[0])
+    for i in range(1,1+num_blobs):
+        spl = index[i].split(' ')
+        if spl[3]=='True':
+            raise UncommitedChanges('Please commit all changes before switching branches.')
+    head_file = root_dir / 'HEAD'
+    with head_file.open('rb') as head_opened:
+        cur_branch = head_opened.read()
+    cur_branch = cur_branch.decode('utf-8')
+    if cur_branch==branch_name: return
+    refs_heads = root_dir / 'refs' / 'heads'
+    last_commit = '-1'
+    for file in refs_heads.iterdir():
+        if file.name == branch_name:
+            with file.open('rb') as file_opened:
+                last_commit = file_opened.read()
+            break
+    if last_commit=='-1':
+        #branch does not exist and we need to create it
+        with (refs_heads / cur_branch).open('rb') as cur_opened:
+            cur_bytes = cur_opened.read()
+        new_branch = refs_heads / branch_name
+        new_branch.write_bytes(cur_bytes)
+        head_file.write_text(branch_name)
+        return False
+    #branch exists so we need to actually perform changes
+    return True
 
 def show_index(root_dir):
     index_file = root_dir / 'index'
@@ -261,22 +400,31 @@ def show_index(root_dir):
     print(index_text)
 
 def main():
-    root_dir = Path('.pit')
-    # init('')
-    # add_file(root_dir,Path('test/bakugo.png'))
-    # add_file(root_dir,Path('hi.txt'))
-    # add_file(root_dir,Path('hi2.txt'))
-    # add_file(root_dir,Path('foldy/informaciq.txt'))
-    # add_file(root_dir,Path('foldy/foldy2/novosti.txt'))
-    #commit(root_dir,'empty commit')
-    # show_index(root_dir)
-
-
-    hi_blob = root_dir / 'objects' / '08627dfd3eb547b566b96f913c069cdad50b0426'
-    with hi_blob.open('rb') as blob_opened: 
-        decompress = zlib.decompress( blob_opened.read() )
-    decompress = decompress.decode('utf-8')
-    print(decompress)
+    while True:
+        inp = input().split()
+        if (inp[1]=='init'): init('')
+        elif (inp[1]=='add'): add_file(root_dir=Path('.pit'),file=Path(inp[2]))
+        elif (inp[1]=='commit'): commit(root_dir=Path('.pit'),commit_message='no message')
+        elif (inp[1]=='show'): show_index(root_dir=Path('.pit'))
+        elif (inp[1]=='log'): print(log(root_dir=Path('.pit')))
+        elif (inp[1]=='retrieve'):
+            create = False
+            if len(inp)==5:
+                create=True
+                create_place = Path(inp[4])
+            else:
+                create_place = None
+            try:
+                arg=retrieve(root_dir=Path('.pit'),commit_name=inp[2],file_name=inp[3],create=create,create_place=create_place)
+                if create==False:
+                    print(arg.decode('utf-8'))
+            except UnableToRetrieve as error:
+                print(error.message)
+        elif (inp[1]=='checkout'):
+            try:
+                checkout(root_dir=Path('.pit'),branch_name=inp[2])
+            except UncommitedChanges as error:
+                print(error.message)
 
 
 if __name__ == '__main__':
