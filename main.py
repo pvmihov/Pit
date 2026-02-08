@@ -167,7 +167,7 @@ def create_tree(root_dir,tree_info):
     blob.write_bytes(compressed_data)
     return hash
 
-def commit(root_dir,commit_message): ###there is a huge error in the commit. When a file is added inside more than one folder that doesnt exist, it crashes
+def commit(root_dir,commit_message):
     #commits the changes in index
     project_dir = root_dir.parent
     index_file = root_dir / 'index'
@@ -203,6 +203,14 @@ def commit(root_dir,commit_message): ###there is a huge error in the commit. Whe
         tree_array[num].num_files+=1
         tree_array[num].file_names.append(splited[0])
         tree_array[num].file_blobs.append(splited[1])
+        while True:
+            father = get_folder(father)
+            if father in tree_dic: break
+            tree_dic[father]=num_trees
+            tree_array.append(Tree_node())
+            tree_array[num_trees].name=father
+            tree_array[num_trees].father = get_folder(father)
+            num_trees+=1
     new_index = str(existing_files)+'\n'
     for i in range(1,num_blobs+1):
         splited = index[i].split(' ')
@@ -357,10 +365,99 @@ class UncommitedChanges(Exception):
         self.message=message
         super().__init__(message)
 
+class IndexChanges(): #must add a type (folder or file) and add all the folder changes to complete_add, complete_del and fix_tree
+    def __init__(self,exists,new,name,blob):
+        self.exists=exists
+        self.new=new
+        self.name=name
+        self.blob=blob
+
+def complete_add_tree(root_dir,new_tree):
+    #iterates through the entire tree and adds IndexChanges for creation for every file
+    with (root_dir / 'objects' / new_tree).open('rb') as new_opened:
+        info = ( ( zlib.decompress( new_opened.read() ) ).decode('utf-8') ).split('\n')
+    changes = []
+    num_files = int(info[1])
+    for i in range(2,2+num_files):
+        spl = info[i].split()
+        changes.append(IndexChanges(True,True,spl[0],spl[1]))
+    num_folders = int(info[2+num_files])
+    for i in range(3+num_files,3+num_files+num_folders):
+        spl = info[i].split()
+        new_changes = complete_add_tree(root_dir,spl[1])
+        for change in new_changes: changes.append(change)
+    return changes
+
+def complete_delete_tree(root_dir,old_tree):
+    #iterates through the entire tree and adds IndexChanges for deletion for every file
+    with (root_dir / 'objects' / old_tree).open('rb') as old_opened:
+        info = ( ( zlib.decompress( old_opened.read() ) ).decode('utf-8') ).split('\n')   
+    changes = []
+    num_files = int(info[1])
+    for i in range(2,2+num_files):
+        spl = info[i].split()
+        changes.append(IndexChanges(False,False,spl[0],spl[1]))
+    num_folders = int(info[2+num_files])
+    for i in range(3+num_files,3+num_files+num_folders):
+        spl = info[i].split()
+        new_changes = complete_delete_tree(root_dir,spl[1])
+        for change in new_changes: changes.append(change)
+    return changes
+
+def fix_tree(root_dir,new_tree,old_tree):
+    #returns the changes needed to sync new_tree and old_tree
+    with (root_dir / 'objects' / new_tree).open('rb') as new_opened:
+        new_info = ( ( zlib.decompress( new_opened.read() ) ).decode('utf-8') ).split('\n')
+    with (root_dir / 'objects' / old_tree).open('rb') as old_opened:
+        old_info = ( ( zlib.decompress( old_opened.read() ) ).decode('utf-8') ).split('\n')   
+    file_dic = {}
+    folder_dic = {}
+    changes = []
+    old_files = int(old_info[1])
+    new_files = int(new_info[1])
+    for i in range(2,2+old_files):
+        spl = old_info[i].split()
+        file_dic[spl[0]]=spl[1]
+    for i in range(2,2+new_files):
+        spl = new_info[i].split()
+        if spl[0] in file_dic:
+            #its in the dictionary
+            if spl[1]!=file_dic[spl[0]]:
+                #its changed
+                changes.append(IndexChanges(True,False,spl[0],spl[1]))
+            file_dic.pop(spl[0])
+        else:
+            #its not so its new
+            changes.append(IndexChanges(True,True,spl[0],spl[1]))
+    for left in file_dic:
+        #all of these were in old but not in new
+        changes.append(IndexChanges(False,False,left,file_dic[left]))
+    old_folders = int(old_info[2+old_files])
+    new_folders = int(new_info[2+new_files])
+    for i in range(3+old_files,3+old_files+old_folders):
+        spl = old_info[i].split()
+        folder_dic[spl[0]]=spl[1]
+    for i in range(3+new_files,3+new_files+new_folders):
+        spl = new_info[i].split()
+        if spl[0] in folder_dic:
+            #its in the dic
+            if spl[1]!=folder_dic[spl[0]]:
+                #there are changes in the folder
+                new_changes = fix_tree(root_dir,spl[1],folder_dic[spl[0]])
+                for change in new_changes: changes.append(change)
+            folder_dic.pop(spl[0])
+        else:
+            new_changes = complete_add_tree(root_dir,spl[1])
+            for change in new_changes: changes.append(change)
+    for left in folder_dic:
+        #all of those folders dont exist anymore
+        new_changes = complete_delete_tree(root_dir,folder_dic[left])
+        for change in new_changes: changes.append(change)
+    return changes
+
 def checkout(root_dir,branch_name):
     #switches to another branch, if it doesnt exist it creates it
     #returns False when it creates a new branch, and True when it changes to an existing one
-
     index_file = root_dir / 'index'
     index = decompress_index(index_file)
     num_blobs = int(index[0])
@@ -389,6 +486,29 @@ def checkout(root_dir,branch_name):
         head_file.write_text(branch_name)
         return False
     #branch exists so we need to actually perform changes
+    changes = []
+    last_commit = last_commit.decode('utf-8')
+    commit_file = root_dir / 'objects' / last_commit
+    with commit_file.open('rb') as commit_opened:
+        commit_compr = commit_opened.read()
+    commit_decomp = zlib.decompress(commit_compr)
+    commit_text = commit_decomp.decode('utf-8')
+    commit_info = commit_text.split('\n')
+    new_tree = commit_info[2]
+    tr_spl = index[num_blobs+2].split()
+    old_tree = tr_spl[1]
+    if old_tree==new_tree:
+        #there arent any changes between the two branches, so we can just change
+        with (refs_heads / cur_branch).open('rb') as cur_opened:
+            cur_bytes = cur_opened.read()
+        new_branch = refs_heads / branch_name
+        new_branch.write_bytes(cur_bytes)
+        head_file.write_text(branch_name)
+        return True
+    changes = fix_tree(root_dir,new_tree,old_tree)
+    for change in changes:
+        print(change.name+' '+change.blob+' '+str(change.exists)+' '+str(change.new))
+        #print(change)
     return True
 
 def show_index(root_dir):
