@@ -366,21 +366,23 @@ class UncommitedChanges(Exception):
         super().__init__(message)
 
 class IndexChanges(): #must add a type (folder or file) and add all the folder changes to complete_add, complete_del and fix_tree
-    def __init__(self,exists,new,name,blob):
-        self.exists=exists
-        self.new=new
-        self.name=name
-        self.blob=blob
+    def __init__(self,exists,new,name,blob,type,old_blob):
+        self.exists = exists
+        self.new = new
+        self.name = name
+        self.blob = blob
+        self.type = type
+        self.old_blob = old_blob
 
 def complete_add_tree(root_dir,new_tree):
     #iterates through the entire tree and adds IndexChanges for creation for every file
     with (root_dir / 'objects' / new_tree).open('rb') as new_opened:
         info = ( ( zlib.decompress( new_opened.read() ) ).decode('utf-8') ).split('\n')
-    changes = []
+    changes = [IndexChanges(True,True,info[0],new_tree,1,'')]
     num_files = int(info[1])
     for i in range(2,2+num_files):
         spl = info[i].split()
-        changes.append(IndexChanges(True,True,spl[0],spl[1]))
+        changes.append(IndexChanges(True,True,spl[0],spl[1],0,''))
     num_folders = int(info[2+num_files])
     for i in range(3+num_files,3+num_files+num_folders):
         spl = info[i].split()
@@ -392,11 +394,11 @@ def complete_delete_tree(root_dir,old_tree):
     #iterates through the entire tree and adds IndexChanges for deletion for every file
     with (root_dir / 'objects' / old_tree).open('rb') as old_opened:
         info = ( ( zlib.decompress( old_opened.read() ) ).decode('utf-8') ).split('\n')   
-    changes = []
+    changes = [IndexChanges(False,False,info[0],old_tree,1,'')]
     num_files = int(info[1])
     for i in range(2,2+num_files):
         spl = info[i].split()
-        changes.append(IndexChanges(False,False,spl[0],spl[1]))
+        changes.append(IndexChanges(False,False,spl[0],spl[1],0,spl[1]))
     num_folders = int(info[2+num_files])
     for i in range(3+num_files,3+num_files+num_folders):
         spl = info[i].split()
@@ -412,7 +414,7 @@ def fix_tree(root_dir,new_tree,old_tree):
         old_info = ( ( zlib.decompress( old_opened.read() ) ).decode('utf-8') ).split('\n')   
     file_dic = {}
     folder_dic = {}
-    changes = []
+    changes = [IndexChanges(True,False,new_info[0],new_tree,1,'')]
     old_files = int(old_info[1])
     new_files = int(new_info[1])
     for i in range(2,2+old_files):
@@ -424,14 +426,14 @@ def fix_tree(root_dir,new_tree,old_tree):
             #its in the dictionary
             if spl[1]!=file_dic[spl[0]]:
                 #its changed
-                changes.append(IndexChanges(True,False,spl[0],spl[1]))
+                changes.append(IndexChanges(True,False,spl[0],spl[1],0,file_dic[spl[0]]))
             file_dic.pop(spl[0])
         else:
             #its not so its new
-            changes.append(IndexChanges(True,True,spl[0],spl[1]))
+            changes.append(IndexChanges(True,True,spl[0],spl[1],0,''))
     for left in file_dic:
         #all of these were in old but not in new
-        changes.append(IndexChanges(False,False,left,file_dic[left]))
+        changes.append(IndexChanges(False,False,left,file_dic[left],0,file_dic[left]))
     old_folders = int(old_info[2+old_files])
     new_folders = int(new_info[2+new_files])
     for i in range(3+old_files,3+old_files+old_folders):
@@ -454,6 +456,17 @@ def fix_tree(root_dir,new_tree,old_tree):
         new_changes = complete_delete_tree(root_dir,folder_dic[left])
         for change in new_changes: changes.append(change)
     return changes
+
+def create_file(file,bytes):
+    unexist = []
+    copy = file.parent
+    while not copy.exists():
+        unexist.append(copy)
+        copy = copy.parent
+    unexist.reverse()
+    for un in unexist:
+        un.mkdir()
+    file.write_bytes(bytes)
 
 def checkout(root_dir,branch_name):
     #switches to another branch, if it doesnt exist it creates it
@@ -507,8 +520,94 @@ def checkout(root_dir,branch_name):
         return True
     changes = fix_tree(root_dir,new_tree,old_tree)
     for change in changes:
-        print(change.name+' '+change.blob+' '+str(change.exists)+' '+str(change.new))
-        #print(change)
+        if change.type == 1: continue
+        cur_file = (root_dir.parent) / change.name
+        if change.exists and (not change.new):
+            #we have to check that the value in the folder is the same as in the old repo
+            if (not cur_file.exists()):
+                raise UncommitedChanges('There are conflicting changes, not added to index')
+            if change.old_blob != sha1_file(cur_file):
+                raise UncommitedChanges('There are conflicting changes, not added to index')
+        elif change.exists and change.new:
+            if cur_file.exists():
+                raise UncommitedChanges('There are conflicting changes, not added to index')
+        else:
+            if (not cur_file.exists()):
+                raise UncommitedChanges('There are conflicting changes, not added to index')
+            if change.old_blob != sha1_file(cur_file):
+                raise UncommitedChanges('There are conflicting changes, not added to index')
+    for_deletion = {}
+    for_change = {}
+    for change in changes:
+        #print(change.name+' '+change.blob+' '+str(change.exists)+' '+str(change.new)+' '+str(change.type)+' '+str(change.old_blob))
+        if change.exists: continue
+        for_deletion[ change.name ] = 1
+    for change in changes:
+        if not change.exists: continue
+        if change.new: continue
+        for_change[change.name] = change.blob
+    new_index_blobs = []
+    for i in range(1,1+num_blobs):
+        spl = index[i].split()
+        if spl[0] in for_deletion: continue
+        elif spl[0] in for_change:
+            new_index_blobs.append([spl[0],for_change[spl[0]]])
+        else:
+            new_index_blobs.append([spl[0],spl[1]])
+    for change in changes:
+        if change.type==1: continue
+        if not change.new: continue
+        new_index_blobs.append([change.name,change.blob])
+    new_index_blobs.sort(key=lambda x:x[0])
+    num_folders = int(index[1+num_blobs])
+    new_index_folders = []
+    for i in range(2+num_blobs,2+num_blobs+num_folders):
+        spl = index[i].split()
+        if spl[0] in for_deletion: continue
+        elif spl[0] in for_change:
+            new_index_folders.append([spl[0],for_change[spl[0]]])
+        else:
+            new_index_folders.append(spl)
+    for change in changes:
+        if change.type==0: continue
+        if not change.new: continue
+        new_index_folders.append([change.name,change.blob])
+    new_index_folders.sort(key=lambda x:x[0])
+    new_index_text = str(len(new_index_blobs))+'\n'
+    for new_blob in new_index_blobs:
+        new_index_text += new_blob[0]+' '+new_blob[1]+' True False\n'
+    new_index_text += str(len(new_index_folders))+'\n'
+    for new_folder in new_index_folders:
+        new_index_text += new_folder[0]+' '+new_folder[1]+'\n'
+    for change in changes:
+        if change.type==1: continue
+        cur_file = (root_dir.parent) / change.name
+        if not change.exists:
+            cur_file.unlink()
+            #print('delete '+str(cur_file.parent)+'/'+cur_file.name)
+        else:
+            #print('change '+str(cur_file.parent)+'/'+cur_file.name)
+            with (root_dir / 'objects' / change.blob).open('rb') as file_opened:
+                file_compressed = file_opened.read()
+            file_bytes = zlib.decompress(file_compressed)
+            create_file(cur_file,file_bytes)
+    for change in changes:
+        if change.type==0: continue
+        if change.exists: continue
+        cur_folder = (root_dir.parent) / change.name
+        cname = change.name
+        while True:
+            if cname == '.': break
+            cur_folder = (root_dir.parent) / cname
+            is_empty = not any(cur_folder.iterdir())
+            if is_empty:
+                cur_folder.rmdir()
+            else: break
+            cname = get_folder(cname)
+    new_index_bytes = new_index_text.encode('utf-8')
+    new_index_compressed = zlib.compress(new_index_bytes)
+    index_file.write_bytes(new_index_compressed)
+    head_file.write_text(branch_name)
     return True
 
 def show_index(root_dir):
