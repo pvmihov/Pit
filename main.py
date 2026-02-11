@@ -124,7 +124,7 @@ def add_file(root_dir,file):
         #if we are here this means that the file is actually in index and we need to change the information
         if cur_position_split[2] != 'False' or cur_position_split[2]!='True':
             new_index_text = ''
-            index[position]=cur_position_split[0]+' '+cur_position_split[1]+' '+'False'+' '+'True'
+            index[position]=cur_position_split[0]+' '+'...'+' '+'False'+' '+'True'
             for tex in index: new_index_text+=(tex+'\n')
             new_index_bytes = new_index_text.encode('utf-8')
             new_index_compressed = zlib.compress(new_index_bytes)
@@ -610,6 +610,98 @@ def checkout(root_dir,branch_name):
     head_file.write_text(branch_name)
     return True
 
+def list_files_in_dir(root_dir, folder_dir, folder_name, project_name):
+    #returns a list of all the files in a directory with their blobs
+    answer = []
+    for child in folder_dir.iterdir():
+        child_name = str(child)
+        child_name = child_name.removeprefix(project_name)
+        if child.is_dir():
+            new = list_files_in_dir(root_dir,child,child_name,project_name)
+            for nnew in new: answer.append(nnew)
+        else:
+            hash = create_blob(root_dir,child)
+            answer.append([child_name,hash])
+    return answer
+
+def add_folder(root_dir, folder_dir):
+    #adds the contents of an entire folder to the index
+    #also checks for removed material, and flags it removed
+    project_dir = root_dir.parent
+    index_file = root_dir / 'index'
+    index = decompress_index(index_file)
+    num_blobs = int(index[0])
+    folder_name = str(folder_dir)
+    name_dir = str(project_dir)
+    if name_dir=='.': name_dir=''
+    folder_name = folder_name.removeprefix(str(project_dir))
+    list_files = list_files_in_dir(root_dir,folder_dir,folder_name,str(project_dir))
+    begin = find_index(index,num_blobs,folder_name)+1
+    end = begin
+    for i in range(begin,len(index)):
+        if i>num_blobs:
+            end=i
+            break
+        if index[i].startswith(folder_name): continue
+        end=i
+        break
+    new_files_dic = {}
+    for file in list_files:
+        new_files_dic[file[0]]=file[1]
+    new_index_stuff = []
+    for cur in index[begin:end]:
+        spl = cur.split()
+        if spl[0] in new_files_dic:
+            if spl[1] == new_files_dic[spl[0]]:
+                if spl[2]=='True': new_index_stuff.append(spl)
+                else: new_index_stuff.append([spl[0],spl[1],'True','True'])
+            else:
+                new_index_stuff.append([spl[0],new_files_dic[spl[0]],'True','True'])
+            new_files_dic.pop(spl[0])
+        else:
+            new_index_stuff.append([spl[0],'...','False','True'])
+    for left_file in new_files_dic:
+        #these files are completely new
+        new_index_stuff.append([left_file,new_files_dic[left_file],'True','True'])
+    new_index_stuff.sort(key=lambda x:x[0])
+    new_num_blobs = num_blobs - (end-begin) + len(new_index_stuff)
+    new_index = str(new_num_blobs)+'\n'
+    for line in index[1:begin]:
+        new_index += line+'\n'
+    for cur in new_index_stuff:
+        new_index += cur[0]+' '+cur[1]+' '+cur[2]+' '+cur[3]+'\n'
+    for line in index[end:]:
+        new_index += line+'\n'
+    new_index_bytes = new_index.encode('utf-8')
+    new_index_compressed = zlib.compress(new_index_bytes)
+    index_file.write_bytes(new_index_compressed)
+
+def status(root_dir,file):
+    #returns the status of a file (untracked,changed but not commited, staged)
+    project_dir = root_dir.parent
+    index_file = root_dir / 'index'
+    index = decompress_index(index_file)
+    num_blobs = int(index[0])
+    file_name = str(file)
+    name_dir = str(project_dir)
+    if name_dir=='.': name_dir=''
+    file_name = file_name.removeprefix(str(project_dir))
+    position = find_index(index,num_blobs,file_name)
+    split = index[position].split()
+    if split[0]!=file_name:
+        return 'Untracked'
+    if not file.exists():
+        if split[2]=='False':
+            return 'Staged'
+        return 'Changed'
+    hash = sha1_file(file)
+    if hash!=split[1]:
+        return 'Changed'
+    if split[3]=='True':
+        return 'Staged'
+    return 'Unchanged'
+
+
 def show_index(root_dir):
     index_file = root_dir / 'index'
     with index_file.open('rb') as index_opened:
@@ -622,7 +714,11 @@ def main():
     while True:
         inp = input().split()
         if (inp[1]=='init'): init('')
-        elif (inp[1]=='add'): add_file(root_dir=Path('.pit'),file=Path(inp[2]))
+        elif (inp[1]=='add'):
+            file = Path(inp[2])
+            if (file.exists()==False): continue
+            if file.is_dir(): add_folder(root_dir=Path('.pit'),folder_dir=file)
+            else: add_file(root_dir=Path('.pit'),file=file)
         elif (inp[1]=='commit'): commit(root_dir=Path('.pit'),commit_message='no message')
         elif (inp[1]=='show'): show_index(root_dir=Path('.pit'))
         elif (inp[1]=='log'): print(log(root_dir=Path('.pit')))
@@ -644,7 +740,7 @@ def main():
                 checkout(root_dir=Path('.pit'),branch_name=inp[2])
             except UncommitedChanges as error:
                 print(error.message)
-
+        elif (inp[1]=='status'): print(status(root_dir=Path('.pit'),file=Path(inp[2])))
 
 if __name__ == '__main__':
     main()
