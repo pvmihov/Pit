@@ -66,6 +66,7 @@ def decompress_index(index_file):
     return index
 
 def add_file(root_dir,file):
+    if file.resolve().is_relative_to(root_dir.resolve()): return []
     #runs command pit add file
     #receives a path object called file and changes the index accordingly
     project_dir = root_dir.parent
@@ -365,7 +366,7 @@ class UncommitedChanges(Exception):
         self.message=message
         super().__init__(message)
 
-class IndexChanges(): #must add a type (folder or file) and add all the folder changes to complete_add, complete_del and fix_tree
+class IndexChanges():
     def __init__(self,exists,new,name,blob,type,old_blob):
         self.exists = exists
         self.new = new
@@ -611,6 +612,7 @@ def checkout(root_dir,branch_name):
     return True
 
 def list_files_in_dir(root_dir, folder_dir, folder_name, project_name):
+    if folder_dir.resolve().is_relative_to(root_dir.resolve()): return []
     #returns a list of all the files in a directory with their blobs
     answer = []
     for child in folder_dir.iterdir():
@@ -625,6 +627,7 @@ def list_files_in_dir(root_dir, folder_dir, folder_name, project_name):
     return answer
 
 def add_folder(root_dir, folder_dir):
+    if folder_dir.resolve().is_relative_to(root_dir.resolve()): return
     #adds the contents of an entire folder to the index
     #also checks for removed material, and flags it removed
     project_dir = root_dir.parent

@@ -5,8 +5,11 @@ DONE
 -pit retrieve <commit> <file> <path>: retrieves the value of <file> in <commit> and writes it to <path>
 -pit checkout <branch>: reverts repository to another branch
 -pit add <folder>: adds an entire folder to index. Removes files which are now gone
+-pit status <file>: tells whether a file is untracked,changed but not commited, staged
+CURRENT
+-implementing communication with the terminal
+-embedding c++ and python
 TODO
--pit status <file>: tells whether a file is untracked,changes but not commited, staged
 -pit restore <file>: essentially runs pit retrieve last <file> <file>, but easier UI
 -pit checkout <commit>: reverts repository to a previous commit
 -pit ls-tree <commit>: lists tree structure of a given commit
