@@ -5,7 +5,7 @@
 std::string command_list[8]={
     "help", "init", "add", "commit", "log", "retrieve", "checkout", "status"
 };
-std::string install_folder="/home/petar/Documents/pit";
+std::string install_folder="INSERT_folder";
 int main(int argc, char* argv[])
 {
     std::filesystem::path current_path = std::filesystem::current_path();
