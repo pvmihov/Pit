@@ -23,7 +23,7 @@ def create_blob(root_dir, file):
 
 def init(project_dir):
     #initialises all the needed files 
-    dot_pit_folder = Path(project_dir) / '.pit'
+    dot_pit_folder = project_dir / '.pit'
     try:
        dot_pit_folder.mkdir(exist_ok=False)
     except FileExistsError:
@@ -713,37 +713,3 @@ def show_index(root_dir):
     index_text = index_content.decode('utf-8')
     print(index_text)
 
-def main():
-    while True:
-        inp = input().split()
-        if (inp[1]=='init'): init('')
-        elif (inp[1]=='add'):
-            file = Path(inp[2])
-            if (file.exists()==False): continue
-            if file.is_dir(): add_folder(root_dir=Path('.pit'),folder_dir=file)
-            else: add_file(root_dir=Path('.pit'),file=file)
-        elif (inp[1]=='commit'): commit(root_dir=Path('.pit'),commit_message='no message')
-        elif (inp[1]=='show'): show_index(root_dir=Path('.pit'))
-        elif (inp[1]=='log'): print(log(root_dir=Path('.pit')))
-        elif (inp[1]=='retrieve'):
-            create = False
-            if len(inp)==5:
-                create=True
-                create_place = Path(inp[4])
-            else:
-                create_place = None
-            try:
-                arg=retrieve(root_dir=Path('.pit'),commit_name=inp[2],file_name=inp[3],create=create,create_place=create_place)
-                if create==False:
-                    print(arg.decode('utf-8'))
-            except UnableToRetrieve as error:
-                print(error.message)
-        elif (inp[1]=='checkout'):
-            try:
-                checkout(root_dir=Path('.pit'),branch_name=inp[2])
-            except UncommitedChanges as error:
-                print(error.message)
-        elif (inp[1]=='status'): print(status(root_dir=Path('.pit'),file=Path(inp[2])))
-
-if __name__ == '__main__':
-    main()
