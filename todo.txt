@@ -8,6 +8,8 @@ DONE
 -pit status <file>: tells whether a file is untracked,changed but not commited, staged
 -implementing communication with the terminal
 CURRENT
+-Have to fix add folder
+-Have to change separator of lines to be \0 in index and tree and commit
 -embedding c++ and python
 TODO
 -pit restore <file>: essentially runs pit retrieve last <file> <file>, but easier UI

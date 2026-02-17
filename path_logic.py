@@ -66,7 +66,7 @@ def decompress_index(index_file):
     return index
 
 def add_file(root_dir,file):
-    if file.resolve().is_relative_to(root_dir.resolve()): return []
+    if file.resolve().is_relative_to(root_dir.resolve()): return
     #runs command pit add file
     #receives a path object called file and changes the index accordingly
     project_dir = root_dir.parent
@@ -76,7 +76,7 @@ def add_file(root_dir,file):
     file_name = str(file)
     name_dir = str(project_dir)
     if name_dir=='.': name_dir=''
-    file_name = file_name.removeprefix(str(project_dir))
+    file_name = file_name.removeprefix(str(project_dir)+'/')
     if file.exists():
         #means file was updated
         hash = create_blob(root_dir,file)
@@ -483,7 +483,7 @@ def checkout(root_dir,branch_name):
     with head_file.open('rb') as head_opened:
         cur_branch = head_opened.read()
     cur_branch = cur_branch.decode('utf-8')
-    if cur_branch==branch_name: return
+    if cur_branch==branch_name: return True
     refs_heads = root_dir / 'refs' / 'heads'
     last_commit = '-1'
     for file in refs_heads.iterdir():
@@ -617,7 +617,7 @@ def list_files_in_dir(root_dir, folder_dir, folder_name, project_name):
     answer = []
     for child in folder_dir.iterdir():
         child_name = str(child)
-        child_name = child_name.removeprefix(project_name)
+        child_name = child_name.removeprefix(project_name+'/')
         if child.is_dir():
             new = list_files_in_dir(root_dir,child,child_name,project_name)
             for nnew in new: answer.append(nnew)
