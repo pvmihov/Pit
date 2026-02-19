@@ -18,7 +18,7 @@ std::string help_info[10]={
     "Description: status returns the current status of a file, as a part of the repository.\nFormat: pit status <file_name>\nSpecifics:\n   Untracked: File isnt in the index.\n   Unchanged: File is the same as in the last commit.\n   Changed: File has been changed from the last commit, but hasn't been staged.\n   Staged: File has been changed and staged.",
     "Description: show prints the current information inside the index.\nFormat: pit show\nSpecifics: The index contains the number of files, each file contains a name, blob, two booleans for whether it exists and whether it was staged for a change. Then there is the number of folders and each has a name and a blob."
 };
-std::string install_folder="/home/petar/Documents/pit";
+std::string install_folder="<install_folder>";
 int callPython(std::string func_name, int numArgs, const char* args[])
 {
     Py_Initialize();
