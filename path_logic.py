@@ -637,7 +637,7 @@ def add_folder(root_dir, folder_dir):
     folder_name = str(folder_dir)
     name_dir = str(project_dir)
     if name_dir=='.': name_dir=''
-    folder_name = folder_name.removeprefix(str(project_dir))
+    folder_name = folder_name.removeprefix(str(project_dir)+'/')
     list_files = list_files_in_dir(root_dir,folder_dir,folder_name,str(project_dir))
     begin = find_index(index,num_blobs,folder_name)+1
     end = begin
@@ -688,7 +688,7 @@ def status(root_dir,file):
     file_name = str(file)
     name_dir = str(project_dir)
     if name_dir=='.': name_dir=''
-    file_name = file_name.removeprefix(str(project_dir))
+    file_name = file_name.removeprefix(str(project_dir)+'/')
     position = find_index(index,num_blobs,file_name)
     split = index[position].split()
     if split[0]!=file_name:

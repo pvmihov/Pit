@@ -102,3 +102,50 @@ def _show(folder_path):
     result = path_logic.show_index(root_dir=(root_folder / '.pit'))
     print(result)
     return "\n"
+
+def _retrieve(folder_path, commit_name, file_path, loc_path):
+    cur_folder = Path(folder_path).resolve()
+    if cur_folder.exists()==False:
+        return "Communicator didn't receive valid folder."
+    elif cur_folder.is_dir()==False:
+        return "Communicator didn't receive valid folder."
+    root_folder = _find_root_folder(cur_folder)
+    if root_folder==None:
+        return str(cur_folder)+' is not part of a repository.'
+    file_name = str(Path(file_path).resolve())
+    file_name = file_name.removeprefix(str(root_folder)+'/')
+    if loc_path=="":
+        try:
+            result = path_logic.retrieve(root_dir=(root_folder / '.pit'),commit_name=commit_name,file_name=file_name,create=False,create_place=None)
+        except path_logic.UnableToRetrieve as error:
+            return error.message 
+        try:
+            result_text = result.decode('utf-8')
+        except UnicodeDecodeError:
+            return "The content of the file is not in text form"
+        print(result_text)
+        return "\n"
+    else:
+        loc_file = Path(loc_path).resolve()
+        if loc_file.is_dir():
+            return "The desired location is a directory"
+        try:
+            path_logic.retrieve(root_dir=(root_folder / '.pit'),commit_name=commit_name,file_name=file_name,create=True,create_place=loc_file)
+        except path_logic.UnableToRetrieve as error:
+            return error.message
+        if commit_name=='last' and file_path==loc_path: return "Restore information of file "+str(loc_file)
+        else: return "Retrieve information of file "+file_name+" to "+str(loc_file)
+    
+def _status(folder_path, file_path):
+    cur_folder = Path(folder_path).resolve()
+    if cur_folder.exists()==False:
+        return "Communicator didn't receive valid folder."
+    elif cur_folder.is_dir()==False:
+        return "Communicator didn't receive valid folder."
+    root_folder = _find_root_folder(cur_folder)
+    if root_folder==None:
+        return str(cur_folder)+' is not part of a repository.'
+    file = Path(file_path).resolve()
+    if file.is_dir():
+        return "The path given is a directory"
+    return path_logic.status(root_dir=(root_folder / '.pit'),file=file)   
