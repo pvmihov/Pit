@@ -39,7 +39,7 @@ def _log(folder_path):
         return str(cur_folder)+' is not part of a repository.'
     result = path_logic.log(root_dir=(root_folder / '.pit'))
     print(result)
-    return "\n"
+    return ""
 
 def _commit(folder_path,message):
     cur_folder = Path(folder_path).resolve()
@@ -66,6 +66,8 @@ def _add(folder_path, file_path):
     if root_folder==None:
         return str(cur_folder)+' is not part of a repository.'
     file = Path(file_path).resolve()
+    if not file.is_relative_to(root_folder):
+        return 'The path '+str(file)+' is not inside the repository.'
     if file.is_dir()==False:
         path_logic.add_file(root_dir=(root_folder / '.pit'), file=file)
     else:
@@ -101,7 +103,7 @@ def _show(folder_path):
         return str(cur_folder)+' is not part of a repository.'
     result = path_logic.show_index(root_dir=(root_folder / '.pit'))
     print(result)
-    return "\n"
+    return ""
 
 def _retrieve(folder_path, commit_name, file_path, loc_path):
     cur_folder = Path(folder_path).resolve()
@@ -112,7 +114,10 @@ def _retrieve(folder_path, commit_name, file_path, loc_path):
     root_folder = _find_root_folder(cur_folder)
     if root_folder==None:
         return str(cur_folder)+' is not part of a repository.'
-    file_name = str(Path(file_path).resolve())
+    file = Path(file_path).resolve()
+    if not file.is_relative_to(root_folder):
+        return 'The path '+str(file)+' is not inside the repository.'
+    file_name = str(file)
     file_name = file_name.removeprefix(str(root_folder)+'/')
     if loc_path=="":
         try:
@@ -124,7 +129,7 @@ def _retrieve(folder_path, commit_name, file_path, loc_path):
         except UnicodeDecodeError:
             return "The content of the file is not in text form"
         print(result_text)
-        return "\n"
+        return ""
     else:
         loc_file = Path(loc_path).resolve()
         if loc_file.is_dir():
@@ -146,6 +151,24 @@ def _status(folder_path, file_path):
     if root_folder==None:
         return str(cur_folder)+' is not part of a repository.'
     file = Path(file_path).resolve()
+    if not file.is_relative_to(root_folder):
+        return 'The path '+str(file)+' is not inside the repository.'
     if file.is_dir():
         return "The path given is a directory"
     return path_logic.status(root_dir=(root_folder / '.pit'),file=file)   
+
+def _ls_tree(folder_path, commit_name):
+    cur_folder = Path(folder_path).resolve()
+    if cur_folder.exists()==False:
+        return "Communicator didn't receive valid folder."
+    elif cur_folder.is_dir()==False:
+        return "Communicator didn't receive valid folder."
+    root_folder = _find_root_folder(cur_folder)
+    try:
+        toprint = path_logic.ls_tree(root_dir=(root_folder / '.pit'),commit_name=commit_name)
+    except UnicodeDecodeError:
+        return 'The commit does not exist'
+    except path_logic.NonExistentTree as error:
+        return error.message
+    print(toprint)
+    return ''

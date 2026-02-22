@@ -2,21 +2,22 @@
 #include<cstring>
 #include<filesystem>
 #include<Python.h>
-std::string command_list[10]={
-    "help", "init", "add", "commit", "log", "restore" ,"retrieve", "checkout", "status", "show"
+std::string command_list[11]={
+    "help", "init", "add", "commit", "log", "restore" ,"retrieve", "checkout", "status", "show", "ls_tree"
 };
 std::string main_info="pit is a version control system (VCS), done as a learning project in python.\nFor help on its specific commands try pit help <command>.\nThe list of commands is:\n";
-std::string help_info[10]={
+std::string help_info[11]={
     "Description: help prints a manual for each function in pit.\nFormat: pit help <command_name>",
     "Description: init creates a repository in the directory inside which it is called.\nFormat: pit init\nSpecifics: Will not create a repository if one exists inside the folder, or if the folder is part of a repo.",
-    "Description: add stages changes to prepare for next commit and adds them to the index file.\nFormat: pit add <file_name/folder_name>\nSpecifics: If run on a folder, it will stage all the files inside the folder, even deleted ones.",
+    "Description: add stages changes to prepare for next commit and adds them to the index file.\nFormat: pit add <file_name/folder_name>\nSpecifics: If it recives . as an argument instead of a name, it uses the directory it is called from.\nIf run on a folder, it will stage all the files inside the folder, even deleted ones.",
     "Description: commit creates a new commit containing the current changes in the index and the received message.\nFormat: pit commit",
     "Description: log prints the entire history of commits inside the currently loaded branch.\nFormat: pit log\nSpecifics: Each commit prints its name, message, and brief info on the changes.",
     "Description: restore returns a file to the state it is in the last commit.\nFormat: pit restore <file_name>",
     "Description: retrieve collects a file in the state of a given commit, that has to be inside the current branch.\nFormat: pit <commit_name> <file_name>\n        pit <commit_name> <file_name> <location_name>\nSpecifics: Writing last for the name of the commit takes the last commit.\nThe first option outputs the contents to the console if it is text.\nThe second outputs creates or overwrites the file in location_name to include the information.",
     "Description: switches to a different branch of the repository.\nFormat: pit checkout <branch_name>\nSpecifics: If the branch doesn't exist, it will create it as a copy of the current one and switch. When switching all tracked files will be reverted to the new branch versions, unless there are conflicting changes.",
     "Description: status returns the current status of a file, as a part of the repository.\nFormat: pit status <file_name>\nSpecifics:\n   Untracked: File isnt in the index.\n   Unchanged: File is the same as in the last commit.\n   Changed: File has been changed from the last commit, but hasn't been staged.\n   Staged: File has been changed and staged.",
-    "Description: show prints the current information inside the index.\nFormat: pit show\nSpecifics: The index contains the number of files, each file contains a name, blob, two booleans for whether it exists and whether it was staged for a change. Then there is the number of folders and each has a name and a blob."
+    "Description: show prints the current information inside the index.\nFormat: pit show\nSpecifics: The index contains the number of files, each file contains a name, blob, two booleans for whether it exists and whether it was staged for a change. Then there is the number of folders and each has a name and a blob.",
+    "Description: ls_tree shows all the files inside the repository in a given commit.\nFormat: pit ls_tree <commit_name>\n        pit ls_tree\nSpecifics:The second option passes the last commit of the current branch. The same happens if you type last as the commit name.",
 };
 std::string install_folder="<install_folder>";
 int callPython(std::string func_name, int numArgs, const char* args[])
@@ -57,18 +58,40 @@ int callPython(std::string func_name, int numArgs, const char* args[])
         Py_DECREF(pFunc);
         return 1;
     }
+    std::string cppResult = PyUnicode_AsUTF8(pResult);
+    std::cout<<cppResult<<"\n";
     Py_DECREF(pModule);
     Py_DECREF(pArgs);
     Py_DECREF(pFunc);  
     Py_DECREF(pResult);
-    std::string cppResult = PyUnicode_AsUTF8(pResult);
-    std::cout<<cppResult<<"\n";
     return 0;
+}
+std::filesystem::path home;
+std::filesystem::path get_path(std::filesystem::path current_path, char* name)
+{
+    if ((*name)=='/')
+    {
+        std::filesystem::path ans(name);
+        return ans;
+    }
+    else if ((*name)=='*')
+    {
+        if (strlen(name)==1) return home;
+        else return (home / (name+2));
+    }
+    else return (current_path / name);
 }
 int main(int argc, char* argv[])
 {
     std::filesystem::path current_path = std::filesystem::current_path();
     std::string current_path_string = current_path.string();
+    const char* home_str = std::getenv("HOME");
+    if (home_str) home=std::filesystem::path(home_str);
+    else
+    {
+        std::cout<<"Program is unable to find home directory.\n";
+        return 0;
+    }
     if (argc==1)
     {
         std::cout<<"No command found\nEnter one of:\n";
@@ -96,7 +119,7 @@ int main(int argc, char* argv[])
             return 0;
         }
         std::filesystem::path file_path;
-        if (strcmp(argv[2],".")!=0) file_path = current_path / argv[2];
+        if (strcmp(argv[2],".")!=0) file_path = get_path(current_path,argv[2]);
         else file_path = current_path;
         std::string file_string = file_path.string();
         const char *args[2]={current_path_string.c_str(),file_string.c_str()};
@@ -129,7 +152,7 @@ int main(int argc, char* argv[])
             std::cout<<"Incorrect number of arguments.\n";
             return 0;
         }
-        std::filesystem::path file_path = current_path / argv[3];
+        std::filesystem::path file_path = get_path(current_path,argv[3]);
         std::string file_path_string = file_path.string();
         if (argc==4) 
         {
@@ -139,7 +162,7 @@ int main(int argc, char* argv[])
         }
         else
         {
-            std::filesystem::path loc_path = current_path / argv[4];
+            std::filesystem::path loc_path = get_path(current_path,argv[4]);
             std::string loc_path_string = loc_path.string();
             const char *args[4]={current_path_string.c_str(),argv[2],file_path_string.c_str(),(loc_path_string).c_str()};
             callPython("_retrieve",4,args);
@@ -162,7 +185,7 @@ int main(int argc, char* argv[])
             std::cout<<"Incorrect number of arguments.\n";
             return 0;
         }
-        std::filesystem::path file_path = current_path / argv[2];
+        std::filesystem::path file_path = get_path(current_path,argv[2]);
         std::string file_string = file_path.string();
         const char *args[2]={current_path_string.c_str(),file_string.c_str()};
         callPython("_status",2,args);
@@ -184,11 +207,30 @@ int main(int argc, char* argv[])
             std::cout<<"Incorrect number of arguments.\n";
             return 0;
         }
-        std::filesystem::path file_path = current_path / argv[2];
+        std::filesystem::path file_path = get_path(current_path,argv[2]);
         std::string file_path_string = file_path.string();
         std::string last="last";
         const char *args[4]={current_path_string.c_str(),last.c_str(),file_path_string.c_str(),file_path_string.c_str()};
         callPython("_retrieve",4,args);
+    }
+    else if (strcmp(argv[1],"ls_tree")==0)
+    {
+        if (argc!=3 && argc!=2)
+        {
+            std::cout<<"Incorrect number of arguments.\n";
+            return 0;         
+        }
+        if (argc==3)
+        {
+            const char *args[2]={current_path_string.c_str(),argv[2]};
+            callPython("_ls_tree",2,args);
+        }
+        else
+        {
+            std::string lst = "last";
+            const char *args[2]={current_path_string.c_str(),lst.c_str()};
+            callPython("_ls_tree",2,args);          
+        }
     }
     else if (strcmp(argv[1],"help")==0)
     {

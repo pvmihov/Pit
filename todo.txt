@@ -8,10 +8,11 @@ DONE
 -pit status <file>: tells whether a file is untracked,changed but not commited, staged
 -implementing communication with the terminal
 -embedding c++ and python
-CURRENT
--Have to change separator of lines to be \0 in index and tree and commit
-TODO
 -pit restore <file>: essentially runs pit retrieve last <file> <file>, but easier UI
--pit checkout <commit>: reverts repository to a previous commit
+-Have to change separator of lines to be \0 in index and tree and commit
+-starting files with / or ~ in command
 -pit ls-tree <commit>: lists tree structure of a given commit
+CURRENT
+TODO
+-pit checkout <commit>: reverts repository to a previous commit
 -potentially pit merge <branch1> <branch2> 

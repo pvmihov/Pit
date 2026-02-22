@@ -5,7 +5,7 @@ Pit is a version control system (VCS), made as a learning project in
 - embedding python inside c++ 
 - the concept behind git
 
-Currently the project only supports Linux and doesnt support commands with global names, and files or folders with spaces in them.
+Currently the project only supports Linux
 
 # Setting up pit
 

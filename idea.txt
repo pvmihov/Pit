@@ -1,3 +1,6 @@
+Everywhere , instead of \n there is \x1e and instead of space there is \x1d
+
+
 Index Structure
 My idea for index is that it is going to be in text form.
 First it includes the number of files
