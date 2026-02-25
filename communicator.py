@@ -164,6 +164,8 @@ def _ls_tree(folder_path, commit_name):
     elif cur_folder.is_dir()==False:
         return "Communicator didn't receive valid folder."
     root_folder = _find_root_folder(cur_folder)
+    if root_folder==None:
+        return str(cur_folder)+' is not part of a repository.'
     try:
         toprint = path_logic.ls_tree(root_dir=(root_folder / '.pit'),commit_name=commit_name)
     except UnicodeDecodeError:
@@ -172,3 +174,36 @@ def _ls_tree(folder_path, commit_name):
         return error.message
     print(toprint)
     return ''
+
+def _branch(folder_path):
+    cur_folder = Path(folder_path).resolve()
+    if cur_folder.exists()==False:
+        return "Communicator didn't receive valid folder."
+    elif cur_folder.is_dir()==False:
+        return "Communicator didn't receive valid folder."
+    root_folder = _find_root_folder(cur_folder)
+    if root_folder==None:
+        return str(cur_folder)+' is not part of a repository.'
+    answer = path_logic.branch_list(root_dir=(root_folder / '.pit'))
+    print(answer)
+    return ''
+
+
+def _merge(folder_path, branch_name):
+    cur_folder = Path(folder_path).resolve()
+    if cur_folder.exists()==False:
+        return "Communicator didn't receive valid folder."
+    elif cur_folder.is_dir()==False:
+        return "Communicator didn't receive valid folder."
+    root_folder = _find_root_folder(cur_folder)
+    if root_folder==None:
+        return str(cur_folder)+' is not part of a repository.'
+    try:
+        if path_logic.merge(root_dir=(root_folder / '.pit'),branch_name=branch_name):
+            return "Completed merge with "+branch_name
+        else:
+            return "Already up to date"
+    except path_logic.UncommitedChanges as error:
+        return error.message
+    except path_logic.NonExistentBranch as error1:
+        return error1.message

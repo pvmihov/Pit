@@ -2,11 +2,12 @@
 #include<cstring>
 #include<filesystem>
 #include<Python.h>
-std::string command_list[11]={
-    "help", "init", "add", "commit", "log", "restore" ,"retrieve", "checkout", "status", "show", "ls_tree"
+std::string command_list[13]={
+    "help", "init", "add", "commit", "log", "restore" ,"retrieve", "checkout", "status", "show", "ls_tree", "branch",
+    "merge",
 };
 std::string main_info="pit is a version control system (VCS), done as a learning project in python.\nFor help on its specific commands try pit help <command>.\nThe list of commands is:\n";
-std::string help_info[11]={
+std::string help_info[13]={
     "Description: help prints a manual for each function in pit.\nFormat: pit help <command_name>",
     "Description: init creates a repository in the directory inside which it is called.\nFormat: pit init\nSpecifics: Will not create a repository if one exists inside the folder, or if the folder is part of a repo.",
     "Description: add stages changes to prepare for next commit and adds them to the index file.\nFormat: pit add <file_name/folder_name>\nSpecifics: If it recives . as an argument instead of a name, it uses the directory it is called from.\nIf run on a folder, it will stage all the files inside the folder, even deleted ones.",
@@ -18,6 +19,8 @@ std::string help_info[11]={
     "Description: status returns the current status of a file, as a part of the repository.\nFormat: pit status <file_name>\nSpecifics:\n   Untracked: File isnt in the index.\n   Unchanged: File is the same as in the last commit.\n   Changed: File has been changed from the last commit, but hasn't been staged.\n   Staged: File has been changed and staged.",
     "Description: show prints the current information inside the index.\nFormat: pit show\nSpecifics: The index contains the number of files, each file contains a name, blob, two booleans for whether it exists and whether it was staged for a change. Then there is the number of folders and each has a name and a blob.",
     "Description: ls_tree shows all the files inside the repository in a given commit.\nFormat: pit ls_tree <commit_name>\n        pit ls_tree\nSpecifics:The second option passes the last commit of the current branch. The same happens if you type last as the commit name.",
+    "Description: branch shows a list of all the branches active in the repository.\nFormat: pit branch",
+    "Work in Progress",
 };
 std::string install_folder="<install_folder>";
 int callPython(std::string func_name, int numArgs, const char* args[])
@@ -231,6 +234,26 @@ int main(int argc, char* argv[])
             const char *args[2]={current_path_string.c_str(),lst.c_str()};
             callPython("_ls_tree",2,args);          
         }
+    }
+    else if (strcmp(argv[1],"branch")==0)
+    {
+        if (argc!=2)
+        {
+            std::cout<<"Incorrect number of arguments.\n";
+            return 0;
+        }
+        const char *args[1]={current_path_string.c_str()};
+        callPython("_branch",1,args);  
+    }
+    else if (strcmp(argv[1],"merge")==0)
+    {
+        if (argc!=3)
+        {
+            std::cout<<"Incorrect number of arguments.\n";
+            return 0;     
+        }
+        const char *args[2]={current_path_string.c_str(),argv[2]};
+        callPython("_merge",2,args);
     }
     else if (strcmp(argv[1],"help")==0)
     {

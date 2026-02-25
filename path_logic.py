@@ -747,6 +747,7 @@ def print_tree(root_dir, tree_name):
     return answer
 
 def ls_tree(root_dir, commit_name):
+    #returns how the directory looks in the given commit
     head_file = root_dir / 'HEAD'
     with head_file.open('rb') as head_opened:
         cur_branch = head_opened.read()
@@ -772,3 +773,97 @@ def ls_tree(root_dir, commit_name):
         text_result+=line
         text_result+='\n'
     return text_result
+
+def branch_list(root_dir):
+    head_file = root_dir / 'HEAD'
+    with head_file.open('rb') as head_opened:
+        cur_branch = head_opened.read()
+    cur_branch = cur_branch.decode('utf-8')
+    print_text = ""
+    refs_heads = root_dir / 'refs' / 'heads'
+    last_commit = '-1'
+    for file in refs_heads.iterdir():
+        if file.name == cur_branch:
+            print_text+='\033[32m'+file.name+'\033[0m *\n'
+        else: print_text+=file.name+'\n'
+    return print_text
+
+class NonExistentBranch(Exception):
+    def __init__(self, msg):
+        self.message = msg
+        super().__init__(self.message)
+
+def find_common_ancestor(refs_heads, commit1, commit2):
+    dict = {
+        commit1 : 1
+    }
+    commit1_file = refs_heads / commit1
+    with commit1_file.open('rb') as opened:
+        commit1_info = (zlib.decompress(opened.read()).decode('utf-8')).split('\x1e')
+    father = commit1_info[1]
+    while True:
+        dict[father]=1
+        if father == '-': break
+        father_file = refs_heads / father
+        with father_file.open('rb') as opened1:
+            father_info = (zlib.decompress(opened1.read()).decode('utf-8')).split('\x1e')
+        father = father_info[1]
+    if commit2 in dict:
+        return commit2
+    commit2_file = refs_heads / commit2
+    with commit2_file.open('rb') as opened2:
+        commit2_info = (zlib.decompress(opened2.read()).decode('utf-8')).split('\x1e')
+    father = commit2_info[1]
+    while True:
+        if father in dict: return father
+        father_file = refs_heads / father
+        with father_file.open('rb') as opened3:
+            father_info = (zlib.decompress(opened3.read()).decode('utf-8')).split('\x1e')
+        father = father_info[1]
+
+def fast_forward_merge(root_dir, branch_name, cur_branch_file, commit_them):
+    try:
+        checkout(root_dir,branch_name)
+    except UncommitedChanges as error:
+        raise UncommitedChanges(error.message)
+    cur_branch_file.write_text(commit_them)
+
+def merge(root_dir, branch_name):
+    #merges branch with branch_name to the current branch
+    index_file = root_dir / 'index'
+    index = decompress_index(index_file)
+    num_blobs = int(index[0])
+    for i in range(1,1+num_blobs):
+        spl = index[i].split('\x1d')
+        if spl[3]=='True':
+            raise UncommitedChanges('Please commit all changes before merging branches.')
+    head_file = root_dir / 'HEAD'
+    with head_file.open('rb') as head_opened:
+        cur_branch = head_opened.read()
+    cur_branch = cur_branch.decode('utf-8')
+    if cur_branch==branch_name: return False
+    refs_heads = root_dir / 'refs' / 'heads'
+    last_commit_them = '-1'
+    for file in refs_heads.iterdir():
+        if file.name == branch_name:
+            with file.open('rb') as file_opened:
+                last_commit_them = file_opened.read()
+    cur_branch_file = refs_heads / cur_branch
+    with cur_branch_file.open('rb') as cur_opened:
+        last_commit_us = cur_opened.read()
+    if last_commit_them=='-1':
+        #branch does not exist
+        raise NonExistentBranch('Branch '+branch_name+' does not exist.')
+    last_commit_us = last_commit_us.decode('utf-8')
+    last_commit_them = last_commit_them.decode('utf-8')
+    object_folder = root_dir / 'objects'
+    lca = find_common_ancestor(object_folder,last_commit_us,last_commit_them)
+    if lca == last_commit_them:
+        return False
+    if lca == last_commit_us:
+        try:
+            fast_forward_merge(root_dir,branch_name,cur_branch_file,last_commit_them)
+        except UncommitedChanges as error:
+            raise UncommitedChanges(error.message)
+        return True
+    #here we have to do a 3-way merge
