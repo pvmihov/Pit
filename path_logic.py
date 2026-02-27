@@ -793,13 +793,20 @@ class NonExistentBranch(Exception):
         self.message = msg
         super().__init__(self.message)
 
+def get_file_decompr(file):
+    with file.open('rb') as opened:
+        compressed = opened.read()
+    decompressed = zlib.decompress(compressed)
+    raw_text = decompressed.decode('utf-8')
+    answer = raw_text.split('\x1e')
+    return answer
+
 def find_common_ancestor(refs_heads, commit1, commit2):
     dict = {
         commit1 : 1
     }
     commit1_file = refs_heads / commit1
-    with commit1_file.open('rb') as opened:
-        commit1_info = (zlib.decompress(opened.read()).decode('utf-8')).split('\x1e')
+    commit1_info = get_file_decompr(commit1_file)
     father = commit1_info[1]
     while True:
         dict[father]=1
@@ -811,8 +818,7 @@ def find_common_ancestor(refs_heads, commit1, commit2):
     if commit2 in dict:
         return commit2
     commit2_file = refs_heads / commit2
-    with commit2_file.open('rb') as opened2:
-        commit2_info = (zlib.decompress(opened2.read()).decode('utf-8')).split('\x1e')
+    commit2_info = get_file_decompr(commit2_file)
     father = commit2_info[1]
     while True:
         if father in dict: return father
@@ -827,6 +833,82 @@ def fast_forward_merge(root_dir, branch_name, cur_branch_file, commit_them):
     except UncommitedChanges as error:
         raise UncommitedChanges(error.message)
     cur_branch_file.write_text(commit_them)
+
+def find_all_changes(object_dir, lca_tree, us_tree, them_tree):
+    if lca_tree!='...': lca_info = get_file_decompr(object_dir / lca_tree)
+    else: lca_info = ['none','0','0']
+    if us_tree!='...': us_info= get_file_decompr(object_dir / us_tree)
+    else: us_info = ['none','0','0']
+    if them_tree!='...': them_info = get_file_decompr(object_dir / them_tree)
+    else: them_info = ['none','0','0']
+    lca_files = {}
+    lca_folders = {}
+    lca_num_files = int(lca_info[1])
+    lca_num_folders = int(lca_info[2+lca_num_files])
+    for line in lca_info[2:2+lca_num_files]:
+        spl = line.split('\x1d')
+        lca_files[spl[0]]=spl[1]
+    for line in lca_info[3+lca_num_files:3+lca_num_files+lca_num_folders]:
+        spl = line.split('\x1d')
+        lca_folders[spl[0]]=spl[1]
+    us_files = {}
+    us_folders = {}
+    us_num_files = int(us_info[1])
+    us_num_folders = int(us_info[2+us_num_files])
+    for line in us_info[2:2+us_num_files]:
+        spl = line.split('\x1d')
+        us_files[spl[0]]=spl[1]
+    for line in us_info[3+us_num_files:3+us_num_files+us_num_folders]:
+        spl = line.split('\x1d')
+        us_folders[spl[0]]=spl[1]
+    changes = []
+    them_num_files = int(them_info[1])
+    them_num_folders = int(them_info[2+them_num_files])
+    for line in them_info[2:2+them_num_files]:
+        spl = line.split('\x1d')
+        if spl[0] not in us_files:
+            if spl[0] in lca_files:
+                changes.append([spl[0],lca_files[spl[0]],'...',spl[1]])
+            else:
+                changes.append([spl[0],'...','...',spl[1]])
+        else:
+            if spl[1] != us_files[spl[0]]:
+                if spl[0] in lca_files:
+                    changes.append([spl[0],lca_files[spl[0]],us_files[spl[0]],spl[1]])
+                else:
+                    changes.append([spl[0],'...',us_files[spl[0]],spl[1]])
+            us_files.pop(spl[0])
+    for key, value in us_files.items():
+        if key in lca_files:
+            changes.append([key,lca_files[key],value,'...'])
+        else:
+            changes.append([key,'...',value,'...'])
+    for line in them_info[3+them_num_files:3+them_num_files+them_num_folders]:
+        spl = line.split('\x1d')
+        if spl[0] not in us_folders:
+            if spl[0] in lca_folders:
+                new_changes = find_all_changes(object_dir,lca_folders[spl[0]],'...',spl[1])
+            else:
+                new_changes = find_all_changes(object_dir,'...','...',spl[1])
+        else:
+            if spl[1] != us_folders[spl[0]]:
+                if spl[0] in lca_folders:
+                    new_changes = find_all_changes(object_dir,lca_folders[spl[0]],us_folders[spl[0]],spl[1])
+                else:
+                    new_changes = find_all_changes(object_dir,'...',us_folders[spl[0]],spl[1])
+            else:
+                new_changes = []
+            us_folders.pop(spl[0])
+        for change in new_changes:
+            changes.append(change)
+    for key, value in us_folders.items():
+        if key in lca_folders:
+            new_changes = find_all_changes(object_dir,lca_folders[key],value,'...')
+        else:
+            new_changes = find_all_changes(object_dir,'...',value,'...')
+        for change in new_changes:
+            changes.append(change)
+    return changes
 
 def merge(root_dir, branch_name):
     #merges branch with branch_name to the current branch
@@ -867,3 +949,30 @@ def merge(root_dir, branch_name):
             raise UncommitedChanges(error.message)
         return True
     #here we have to do a 3-way merge
+    #first I want a list of all files that are different in us and them
+    #then i have to retrieve what they are in the lca commit
+    commit1_file = root_dir / 'objects' / last_commit_us
+    commit_us_tree = (get_file_decompr(commit1_file))[2]
+    commit2_file = root_dir / 'objects' / last_commit_them
+    commit_them_tree = (get_file_decompr(commit2_file))[2]
+    commit3_file = root_dir / 'objects' / lca
+    lca_tree = (get_file_decompr(commit3_file))[2]
+    new_merge_commit = input('Feed forward merge cannot be performed. Enter commit message for 3-way-merge:\n')
+    all_changes = find_all_changes(object_dir=(root_dir / 'objects'),lca_tree=lca_tree,us_tree=commit_us_tree,them_tree=commit_them_tree)
+    project_dir_name = str(root_dir.parent)
+    do_change = []
+    for change in all_changes:
+        if change[1]!=change[2] and change[1]!=change[3]:
+            raise UncommitedChanges('There are conflicting changes between the branches.')
+        elif change[1]==change[2]:
+            cur_file = Path(project_dir_name+'/'+change[0])
+            if cur_file.exists():
+                cur_hash = sha1_file(cur_file)
+                if cur_hash!=change[2]:
+                    raise UncommitedChanges('There are conflicting changes in the current branch, not added to index.')
+            else:
+                if change[2]!='...':
+                    raise UncommitedChanges('There are conflicting changes in the current branch, not added to index.')
+            do_change.append([change[0],change[3]])
+
+    return True
