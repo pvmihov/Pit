@@ -20,7 +20,7 @@ std::string help_info[13]={
     "Description: show prints the current information inside the index.\nFormat: pit show\nSpecifics: The index contains the number of files, each file contains a name, blob, two booleans for whether it exists and whether it was staged for a change. Then there is the number of folders and each has a name and a blob.",
     "Description: ls_tree shows all the files inside the repository in a given commit.\nFormat: pit ls_tree <commit_name>\n        pit ls_tree\nSpecifics:The second option passes the last commit of the current branch. The same happens if you type last as the commit name.",
     "Description: branch shows a list of all the branches active in the repository.\nFormat: pit branch",
-    "Work in Progress",
+    "Description: merge merges another branch into the current one.\nFormat: pit merge <branch_name>\nSpecifics: If a feed forward merge cannot be performed, it will create a merge commit. Merge only puts the contents of <branch_name> into the current branch, but does not merge the current one into <branch_name>.",
 };
 std::string install_folder="<install_folder>";
 int callPython(std::string func_name, int numArgs, const char* args[])

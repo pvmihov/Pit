@@ -974,5 +974,55 @@ def merge(root_dir, branch_name):
                 if change[2]!='...':
                     raise UncommitedChanges('There are conflicting changes in the current branch, not added to index.')
             do_change.append([change[0],change[3]])
-
+    do_change.sort(key=lambda x:x[0])
+    new_index_text = '\x1e'
+    lst_ch = 1
+    new_num_files = int(index[0])
+    for change in do_change:
+        fdd = find_index(index,int(index[0]),change[0])
+        print(change[0]+' '+change[1]+' '+str(fdd))
+        if (index[fdd].split('\x1d'))[0]==change[0]:
+            #we have a change in the file
+            for line in index[lst_ch:fdd]:
+                new_index_text+=line+'\x1e'
+            lst_ch = fdd+1
+            if change[1]!='...':
+                #we don't have a deletion, so we have to add the file as existing
+                new_index_text+=change[0]+'\x1d'+change[1]+'\x1dTrue\x1dTrue\x1e'
+            else:
+                #we have to add it as deleted
+                new_index_text+=change[0]+'\x1d...\x1dFalse\x1dTrue\x1e'
+        else:
+            #we have a new file
+            for line in index[lst_ch:fdd+1]:
+                new_index_text+=line+'\x1e'
+            lst_ch = fdd+1
+            if change[1]=='...':
+                print('THIS IS A BIG ERROR, IT SHOULD NEVER HAPPEN')
+            new_index_text+=change[0]+'\x1d'+change[1]+'\x1dTrue\x1dTrue\x1e'
+            new_num_files+=1
+    new_index_text = str(new_num_files)+new_index_text
+    for line_index in index[lst_ch:]:
+        new_index_text+=line_index+'\x1e'
+    new_index_compr = zlib.compress(new_index_text.encode('utf-8'))
+    index_file.write_bytes(new_index_compr)
+    for change in do_change:
+        file_obj = Path(project_dir_name+'/'+change[0])
+        if (change[1]=='...'):
+            file_obj.unlink()
+            cname = get_folder(change[0])
+            while True:
+                if cname == '.': break
+                cur_folder = (root_dir.parent) / cname
+                is_empty = not any(cur_folder.iterdir())
+                if is_empty:
+                    cur_folder.rmdir()
+                else: break
+                cname = get_folder(cname)
+        else:
+            with (root_dir / 'objects' / change[1]).open('rb') as file_opened:
+                file_compressed = file_opened.read()
+            file_bytes = zlib.decompress(file_compressed)
+            create_file(file_obj,file_bytes)
+    commit(root_dir,new_merge_commit)
     return True
