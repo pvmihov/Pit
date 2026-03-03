@@ -6,6 +6,7 @@ import { inflate, deflate } from 'node:zlib';
 import { promisify } from 'node:util';
 const doInflate = promisify(inflate);
 const doDeflate = promisify(deflate);
+import archiver from 'archiver';
 
 const rl = readline.createInterface({
   input: process.stdin,
@@ -41,11 +42,7 @@ async function create_pit(root_dir)
   await fs.mkdir(path.join(root_dir,'.pit'));
   await fs.mkdir(path.join(root_dir,'.pit','objects'))
   await fs.mkdir(path.join(root_dir,'.pit','refs','heads'),{recursive:true})
-  await fs.writeFile(path.join(root_dir,'.pit','HEAD'),'Main')
   await fs.writeFile(path.join(root_dir,'.pit','refs','heads','Main'),'-')
-  const index_content = '0\x1e0\x1e'
-  const index_compr = await doDeflate(index_content)
-  await fs.writeFile(path.join(root_dir,'.pit','index'),index_compr)
 }
 
 try
@@ -65,7 +62,6 @@ catch (err)
   create_pit(root_dir)
 }
 
-/*
 let number = await rl.question('Enter server number between 1024 and 65535:\n')
 number = parseInt(number)
 while (isNaN(number) || number<1024 || number>65535)
@@ -73,13 +69,36 @@ while (isNaN(number) || number<1024 || number>65535)
   number = await rl.question('Please enter a number in the range 1024 and 65535:\n')
   number = parseInt(number)
 }
+rl.close()
 console.log(`Using localhost:${number} as server`)
 
 http
   .createServer((request, response) => {
-
+    if (request.method === 'GET' && request.url === '/clone')
+    {
+        response.writeHead(200, {
+            'Content-Type': 'application/zip',
+            'Content-Disposition': 'attachment; filename="project.zip"'
+        })
+        const archive = archiver('zip', {
+            zlib: { level: 9 }
+        })
+        archive.on('error', (err) => {
+            console.error("Archive error:", err)
+            if (!response.headersSent) {
+                response.writeHead(500)
+            }
+            response.end('Failed to generate archive')
+        })
+        archive.pipe(response)
+        archive.directory(path.join(root_dir,'.pit'), '.pit');
+        archive.finalize();
+    }
+    else
+    {
+      response.statusCode = 404
+      response.end()
+    }
   })
   .listen(number);
-*/
 
-rl.close()

@@ -531,6 +531,7 @@ def checkout(root_dir,branch_name):
                 raise UncommitedChanges('There are conflicting changes, not added to index')
         elif change.exists and change.new:
             if cur_file.exists():
+                print(str(cur_file))
                 raise UncommitedChanges('There are conflicting changes, not added to index')
         else:
             if (not cur_file.exists()):
@@ -1026,3 +1027,56 @@ def merge(root_dir, branch_name):
             create_file(file_obj,file_bytes)
     commit(root_dir,new_merge_commit)
     return True
+
+def iterate_tree(root_dir, main_tree):
+    if main_tree=='-':
+        return []
+    tree_info = get_file_decompr(root_dir / 'objects' / main_tree)
+    ans = [ [tree_info[0],main_tree,False] ]
+    num_files = int(tree_info[1])
+    for line in tree_info[2:2+num_files]:
+        spl = line.split('\x1d')
+        ans.append([spl[0],spl[1],True])
+    num_folders = int(tree_info[2+num_files])
+    for line in tree_info[3+num_files:3+num_files+num_folders]:
+        spl = line.split('\x1d')
+        ans_child = iterate_tree(root_dir,spl[1])
+        for new_ans in ans_child:
+            ans.append(new_ans)
+    return ans
+
+def put_content_after_clone(root_dir):
+    project_dir = root_dir.parent
+    refs_heads = root_dir / 'refs' / 'heads' / 'Main'
+    with refs_heads.open('rb') as opened:
+        refs_heads_text = (opened.read()).decode('utf-8')
+    last_commit = root_dir / 'objects' / refs_heads_text
+    commit_info = get_file_decompr(last_commit)
+    head_file = root_dir / 'HEAD'
+    head_file.write_text('Main')
+    main_tree = commit_info[2]
+    contents = iterate_tree(root_dir, main_tree)
+    all_files = []
+    all_trees = []
+    for content in contents:
+        if content[2]:
+            all_files.append([content[0],content[1]])
+            blob = root_dir / 'objects' / content[1]
+            with blob.open('rb') as opened_blob:
+                compr_blob = opened_blob.read()
+            bytes_blob = zlib.decompress(compr_blob)
+            new_file = project_dir / content[0]
+            create_file(new_file,bytes_blob)
+        else:
+            all_trees.append([content[0],content[1]]) 
+    all_files.sort(key= lambda x:x[0])
+    all_trees.sort(key= lambda x:x[0])
+    index_text = str(len(all_files))+'\x1e'
+    for file in all_files:
+        index_text+=file[0]+'\x1d'+file[1]+'\x1dTrue\x1dFalse\x1e'
+    index_text+=str(len(all_trees))+'\x1e'
+    for tree in all_trees:
+        index_text+=tree[0]+'\x1d'+tree[1]+'\x1e'
+    index_compr = zlib.compress( index_text.encode('utf-8') )
+    index_file = root_dir / 'index'
+    index_file.write_bytes(index_compr)

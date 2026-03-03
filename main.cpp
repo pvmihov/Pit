@@ -2,12 +2,12 @@
 #include<cstring>
 #include<filesystem>
 #include<Python.h>
-std::string command_list[13]={
+std::string command_list[]={
     "help", "init", "add", "commit", "log", "restore" ,"retrieve", "checkout", "status", "show", "ls_tree", "branch",
-    "merge",
+    "merge", "clone",
 };
 std::string main_info="pit is a version control system (VCS), done as a learning project in python.\nFor help on its specific commands try pit help <command>.\nThe list of commands is:\n";
-std::string help_info[13]={
+std::string help_info[]={
     "Description: help prints a manual for each function in pit.\nFormat: pit help <command_name>",
     "Description: init creates a repository in the directory inside which it is called.\nFormat: pit init\nSpecifics: Will not create a repository if one exists inside the folder, or if the folder is part of a repo.",
     "Description: add stages changes to prepare for next commit and adds them to the index file.\nFormat: pit add <file_name/folder_name>\nSpecifics: If it recives . as an argument instead of a name, it uses the directory it is called from.\nIf run on a folder, it will stage all the files inside the folder, even deleted ones.",
@@ -21,8 +21,9 @@ std::string help_info[13]={
     "Description: ls_tree shows all the files inside the repository in a given commit.\nFormat: pit ls_tree <commit_name>\n        pit ls_tree\nSpecifics:The second option passes the last commit of the current branch. The same happens if you type last as the commit name.",
     "Description: branch shows a list of all the branches active in the repository.\nFormat: pit branch",
     "Description: merge merges another branch into the current one.\nFormat: pit merge <branch_name>\nSpecifics: If a feed forward merge cannot be performed, it will create a merge commit. Merge only puts the contents of <branch_name> into the current branch, but does not merge the current one into <branch_name>.",
+    "Description: clone creates a folder called project and copies the provided repository into it.\nFormat: pit clone <number>\nSpecifics: The command tries to contant localhost:<number>, the number must be within 1024 and 65535. The current branch is set as Main, but the entire repository is copied.",
 };
-std::string install_folder="<install_folder>";
+std::string install_folder="/home/petar/Documents/pit";
 int callPython(std::string func_name, int numArgs, const char* args[])
 {
     Py_Initialize();
@@ -254,6 +255,16 @@ int main(int argc, char* argv[])
         }
         const char *args[2]={current_path_string.c_str(),argv[2]};
         callPython("_merge",2,args);
+    }
+    else if (strcmp(argv[1],"clone")==0)
+    {
+        if (argc!=3)
+        {
+            std::cout<<"Incorrect number of arguments.\n";
+            return 0;
+        }
+        const char *args[2]={current_path_string.c_str(),argv[2]};
+        callPython("_clone",2,args);    
     }
     else if (strcmp(argv[1],"help")==0)
     {
