@@ -13,6 +13,8 @@ DONE
 -starting files with / or ~ in command
 -pit ls-tree <commit>: lists tree structure of a given commit
 CURRENT
+-learning node.js for servers
 TODO
+-pit push,pull,clone
 -pit checkout <commit>: reverts repository to a previous commit
 -potentially pit merge <branch1> <branch2> 
