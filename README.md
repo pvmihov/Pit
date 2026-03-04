@@ -4,6 +4,7 @@ Pit is a version control system (VCS), made as a learning project in
 - python path manipulation and heshing
 - embedding python inside c++ 
 - the concept behind git
+- basic server communication in python and node.js
 
 Currently the project only supports Linux
 
@@ -24,3 +25,12 @@ g++ main.cpp -o pit $(python3-config --cflags --embed --libs)
 ```bash
 sudo cp pit /usr/local/bin
 ```
+
+# Server simulation
+
+pit doesn't actually support network features. When using clone, fetch, pull or push, it contacts a localhost listener, running on the same computer, and communicates with it.
+To turn on the "server" you have to run the run_server.js file
+```bash
+node run_server.js
+```
+The program will prompt you to select a directory, where all the "network" data of the repository will be stored. After that you will be prompted to choose a listening port. When the "server" is running, you need to enter that port number to the pit commands, so it can contact the "server".
