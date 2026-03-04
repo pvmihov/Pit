@@ -4,7 +4,7 @@
 #include<Python.h>
 std::string command_list[]={
     "help", "init", "add", "commit", "log", "restore" ,"retrieve", "checkout", "status", "show", "ls_tree", "branch",
-    "merge", "clone",
+    "merge", "clone", "fetch", "pull",
 };
 std::string main_info="pit is a version control system (VCS), done as a learning project in python.\nFor help on its specific commands try pit help <command>.\nThe list of commands is:\n";
 std::string help_info[]={
@@ -22,8 +22,10 @@ std::string help_info[]={
     "Description: branch shows a list of all the branches active in the repository.\nFormat: pit branch",
     "Description: merge merges another branch into the current one.\nFormat: pit merge <branch_name>\nSpecifics: If a feed forward merge cannot be performed, it will create a merge commit. Merge only puts the contents of <branch_name> into the current branch, but does not merge the current one into <branch_name>.",
     "Description: clone creates a folder called project and copies the provided repository into it.\nFormat: pit clone <number>\nSpecifics: The command tries to contant localhost:<number>, the number must be within 1024 and 65535. The current branch is set as Main, but the entire repository is copied.",
+    "Description: fetch",
+    "Description: pull",
 };
-std::string install_folder="/home/petar/Documents/pit";
+std::string install_folder="<install_folder>";
 int callPython(std::string func_name, int numArgs, const char* args[])
 {
     Py_Initialize();
@@ -42,8 +44,8 @@ int callPython(std::string func_name, int numArgs, const char* args[])
     PyObject* pFunc = PyObject_GetAttrString(pModule, func_name.c_str());
     if (pFunc==nullptr || !PyCallable_Check(pFunc))
     {
-        if (PyErr_Occurred()) PyErr_Print();
-        std::cerr<<"Couldn't find _init function in communicator.py";
+        //if (PyErr_Occurred()) PyErr_Print();
+        std::cerr<<"Couldn't find "<<func_name<<" function in communicator.py\n";
         Py_DECREF(pModule);
         return 1;
     }
@@ -265,6 +267,26 @@ int main(int argc, char* argv[])
         }
         const char *args[2]={current_path_string.c_str(),argv[2]};
         callPython("_clone",2,args);    
+    }
+    else if (strcmp(argv[1],"fetch")==0)
+    {
+        if (argc!=3)
+        {
+            std::cout<<"Incorrect number of arguments.\n";
+            return 0;
+        }
+        const char *args[2]={current_path_string.c_str(),argv[2]};
+        callPython("_fetch",2,args);    
+    }
+    else if (strcmp(argv[1],"pull")==0)
+    {
+        if (argc!=3)
+        {
+            std::cout<<"Incorrect number of arguments.\n";
+            return 0;
+        }
+        const char *args[2]={current_path_string.c_str(),argv[2]};
+        callPython("_pull",2,args);    
     }
     else if (strcmp(argv[1],"help")==0)
     {

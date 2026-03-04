@@ -637,8 +637,10 @@ def add_folder(root_dir, folder_dir):
     num_blobs = int(index[0])
     folder_name = str(folder_dir)
     name_dir = str(project_dir)
-    if name_dir=='.': name_dir=''
-    folder_name = folder_name.removeprefix(str(project_dir)+'/')
+    if (folder_name!=name_dir):
+        folder_name = folder_name.removeprefix(str(project_dir)+'/')
+    else:
+        folder_name = ''
     list_files = list_files_in_dir(root_dir,folder_dir,folder_name,str(project_dir))
     begin = find_index(index,num_blobs,folder_name)+1
     end = begin
@@ -1051,13 +1053,15 @@ def put_content_after_clone(root_dir):
     with refs_heads.open('rb') as opened:
         refs_heads_text = (opened.read()).decode('utf-8')
     last_commit = root_dir / 'objects' / refs_heads_text
-    commit_info = get_file_decompr(last_commit)
     head_file = root_dir / 'HEAD'
     head_file.write_text('Main')
-    main_tree = commit_info[2]
-    contents = iterate_tree(root_dir, main_tree)
     all_files = []
     all_trees = []
+    contents = []
+    if refs_heads_text != '-':
+        commit_info = get_file_decompr(last_commit)
+        main_tree = commit_info[2]
+        contents = iterate_tree(root_dir, main_tree)
     for content in contents:
         if content[2]:
             all_files.append([content[0],content[1]])

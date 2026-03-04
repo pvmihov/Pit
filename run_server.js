@@ -92,7 +92,27 @@ http
         })
         archive.pipe(response)
         archive.directory(path.join(root_dir,'.pit'), '.pit');
-        archive.finalize();
+        archive.finalize()
+    }
+    else if (request.method === 'GET' && request.url === '/fetch')
+    {
+        response.writeHead(200, {
+            'Content-Type': 'application/zip',
+            'Content-Disposition': 'attachment; filename="project.zip"'
+        })
+        const archive = archiver('zip', {
+            zlib: { level: 9 }
+        })
+        archive.on('error', (err) => {
+            console.error("Archive error:", err)
+            if (!response.headersSent) {
+                response.writeHead(500)
+            }
+            response.end('Failed to generate archive')
+        })
+        archive.pipe(response)
+        archive.directory(path.join(root_dir,'.pit', 'objects'), 'objects');
+        archive.finalize()
     }
     else
     {

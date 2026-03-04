@@ -233,3 +233,40 @@ def _clone(folder_path, server_num):
     except server_logic.ServerError as err:
         return err.message
     return 'Finished cloning into '+str(desired_folder)
+
+def _fetch(folder_path, server_num):
+    cur_folder = Path(folder_path).resolve()
+    if cur_folder.exists()==False:
+        return "Communicator didn't receive valid folder."
+    elif cur_folder.is_dir()==False:
+        return "Communicator didn't receive valid folder."
+    root_folder = _find_root_folder(cur_folder)
+    if root_folder==None:
+        return str(cur_folder)+' is not part of a repository.'
+    try:
+        number = int(server_num)
+    except:
+        return 'The server number must be a number'
+    if number<1024 or number>65535:
+        return 'The server must be a number between 1024 and 65535'
+    try:
+        server_logic.fetch(root_dir=(root_folder / '.pit'),host_num=number)
+    except server_logic.ServerError as err:
+        return err.message
+    return 'Finished fetching from '+str(server_num)
+
+def _pull(folder_path, server_num):
+    cur_folder = Path(folder_path).resolve()
+    if cur_folder.exists()==False:
+        return "Communicator didn't receive valid folder."
+    elif cur_folder.is_dir()==False:
+        return "Communicator didn't receive valid folder."
+    root_folder = _find_root_folder(cur_folder)
+    if root_folder==None:
+        return str(cur_folder)+' is not part of a repository.'
+    try:
+        number = int(server_num)
+    except:
+        return 'The server number must be a number'
+    if number<1024 or number>65535:
+        return 'The server must be a number between 1024 and 65535'   

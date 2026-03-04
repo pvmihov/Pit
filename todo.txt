@@ -13,7 +13,6 @@ DONE
 -starting files with / or ~ in command
 -pit ls-tree <commit>: lists tree structure of a given commit
 CURRENT
--checkout is wrong for some reason
 -learning node.js for servers
 TODO
 -pit push,pull,clone
