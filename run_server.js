@@ -13,7 +13,8 @@ const rl = readline.createInterface({
   output: process.stdout,
 })
 
-let root_dir = await rl.question('Enter the path that will be used to store project information:\n')
+//let root_dir = await rl.question('Enter the path that will be used to store project information:\n')
+let root_dir = '/home/petar/images'
 do{
   try
   {
@@ -62,7 +63,8 @@ catch (err)
   create_pit(root_dir)
 }
 
-let number = await rl.question('Enter server number between 1024 and 65535:\n')
+//let number = await rl.question('Enter server number between 1024 and 65535:\n')
+let number = 6767
 number = parseInt(number)
 while (isNaN(number) || number<1024 || number>65535)
 {
@@ -73,7 +75,7 @@ rl.close()
 console.log(`Using localhost:${number} as server`)
 
 http
-  .createServer((request, response) => {
+  .createServer(async (request, response) => {
     if (request.method === 'GET' && request.url === '/clone')
     {
         response.writeHead(200, {
@@ -113,6 +115,26 @@ http
         archive.pipe(response)
         archive.directory(path.join(root_dir,'.pit', 'objects'), 'objects');
         archive.finalize()
+    }
+    else if (request.method === 'GET' && request.url === '/pull')
+    {
+      let cur_branch = request.headers['x-current-branch']
+      try {
+        const data = await fs.readFile(path.join(root_dir, '.pit', 'refs', 'heads', cur_branch), { encoding: 'utf8' })
+        const data_text = data.toString()
+        response.writeHead(200,{
+          'Content-Type': 'text/plain'
+        })
+        response.write(data_text)
+        response.end()
+      } catch (err) {
+        if (err.code === 'ENOENT')
+        {
+          response.statusCode = 204
+          response.end()
+        }
+      }
+      response.end()
     }
     else
     {

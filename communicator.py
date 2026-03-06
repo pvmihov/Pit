@@ -200,7 +200,7 @@ def _merge(folder_path, branch_name):
     if root_folder==None:
         return str(cur_folder)+' is not part of a repository.'
     try:
-        if path_logic.merge(root_dir=(root_folder / '.pit'),branch_name=branch_name):
+        if path_logic.merge(root_dir=(root_folder / '.pit'),branch_name=branch_name)>0:
             return "Completed merge with "+branch_name
         else:
             return "Already up to date"
@@ -208,6 +208,8 @@ def _merge(folder_path, branch_name):
         return error.message
     except path_logic.NonExistentBranch as error1:
         return error1.message
+    except path_logic.ConflictingChanges as error2:
+        return error2.message
     
 
 def _clone(folder_path, server_num):
@@ -269,4 +271,15 @@ def _pull(folder_path, server_num):
     except:
         return 'The server number must be a number'
     if number<1024 or number>65535:
-        return 'The server must be a number between 1024 and 65535'   
+        return 'The server must be a number between 1024 and 65535'
+    try:
+        text = server_logic.pull(project_dir=root_folder,host_num=number)
+        if text:
+            return text
+    except server_logic.ServerError as err:
+        return err.message
+    except path_logic.UncommitedChanges as err2:
+        return err2.message
+    except path_logic.ConflictingChanges as err3:
+        return err3.message
+    return 'Finished pulling from '+str(server_num)   

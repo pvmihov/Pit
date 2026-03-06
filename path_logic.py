@@ -913,7 +913,12 @@ def find_all_changes(object_dir, lca_tree, us_tree, them_tree):
             changes.append(change)
     return changes
 
-def merge(root_dir, branch_name):
+class ConflictingChanges(Exception):
+    def __init__(self, msg):
+        self.message = msg
+        super().__init__(self.message)
+
+def merge(root_dir, branch_name, ask_for_comm_name=True):
     #merges branch with branch_name to the current branch
     index_file = root_dir / 'index'
     index = decompress_index(index_file)
@@ -944,13 +949,13 @@ def merge(root_dir, branch_name):
     object_folder = root_dir / 'objects'
     lca = find_common_ancestor(object_folder,last_commit_us,last_commit_them)
     if lca == last_commit_them:
-        return False
+        return 0
     if lca == last_commit_us:
         try:
             fast_forward_merge(root_dir,branch_name,cur_branch_file,last_commit_them)
         except UncommitedChanges as error:
             raise UncommitedChanges(error.message)
-        return True
+        return 1
     #here we have to do a 3-way merge
     #first I want a list of all files that are different in us and them
     #then i have to retrieve what they are in the lca commit
@@ -960,22 +965,23 @@ def merge(root_dir, branch_name):
     commit_them_tree = (get_file_decompr(commit2_file))[2]
     commit3_file = root_dir / 'objects' / lca
     lca_tree = (get_file_decompr(commit3_file))[2]
-    new_merge_commit = input('Feed forward merge cannot be performed. Enter commit message for 3-way-merge:\n')
+    if ask_for_comm_name: new_merge_commit = input('Feed forward merge cannot be performed. Enter commit message for 3-way-merge:\n')
+    else: new_merge_commit = f'Merge commit for the temperary {cur_branch} with {branch_name}' 
     all_changes = find_all_changes(object_dir=(root_dir / 'objects'),lca_tree=lca_tree,us_tree=commit_us_tree,them_tree=commit_them_tree)
     project_dir_name = str(root_dir.parent)
     do_change = []
     for change in all_changes:
         if change[1]!=change[2] and change[1]!=change[3]:
-            raise UncommitedChanges('There are conflicting changes between the branches.')
+            raise ConflictingChanges('There are conflicting changes between the branches.')
         elif change[1]==change[2]:
             cur_file = Path(project_dir_name+'/'+change[0])
             if cur_file.exists():
                 cur_hash = sha1_file(cur_file)
                 if cur_hash!=change[2]:
-                    raise UncommitedChanges('There are conflicting changes in the current branch, not added to index.')
+                    raise ConflictingChanges('There are conflicting changes in the current branch, not added to index.')
             else:
                 if change[2]!='...':
-                    raise UncommitedChanges('There are conflicting changes in the current branch, not added to index.')
+                    raise ConflictingChanges('There are conflicting changes in the current branch, not added to index.')
             do_change.append([change[0],change[3]])
     do_change.sort(key=lambda x:x[0])
     new_index_text = '\x1e'
@@ -983,7 +989,7 @@ def merge(root_dir, branch_name):
     new_num_files = int(index[0])
     for change in do_change:
         fdd = find_index(index,int(index[0]),change[0])
-        print(change[0]+' '+change[1]+' '+str(fdd))
+        #print(change[0]+' '+change[1]+' '+str(fdd))
         if (index[fdd].split('\x1d'))[0]==change[0]:
             #we have a change in the file
             for line in index[lst_ch:fdd]:
@@ -1028,7 +1034,7 @@ def merge(root_dir, branch_name):
             file_bytes = zlib.decompress(file_compressed)
             create_file(file_obj,file_bytes)
     commit(root_dir,new_merge_commit)
-    return True
+    return 2
 
 def iterate_tree(root_dir, main_tree):
     if main_tree=='-':
