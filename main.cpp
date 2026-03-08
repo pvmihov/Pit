@@ -4,7 +4,7 @@
 #include<Python.h>
 std::string command_list[]={
     "help", "init", "add", "commit", "log", "restore" ,"retrieve", "checkout", "status", "show", "ls_tree", "branch",
-    "merge", "clone", "fetch", "pull",
+    "merge", "clone", "fetch", "pull", "push"
 };
 std::string main_info="pit is a version control system (VCS), done as a learning project in python.\nFor help on its specific commands try pit help <command>.\nThe list of commands is:\n";
 std::string help_info[]={
@@ -23,9 +23,10 @@ std::string help_info[]={
     "Description: merge merges another branch into the current one.\nFormat: pit merge <branch_name>\nSpecifics: If a feed forward merge cannot be performed, it will create a merge commit. Merge only puts the contents of <branch_name> into the current branch, but does not merge the current one into <branch_name>.",
     "Description: clone creates a folder called project and copies the provided repository into it.\nFormat: pit clone <number>\nSpecifics: The command tries to contact localhost:<number>, the number must be within 1024 and 65535. The current branch is set as Main, but the entire repository is copied.",
     "Description: fetch copies the objects folder of the provided server repository into the current one.\nFormat: pit fetch <number>\nSpecifics: The command tries to contact localhost:<number>, the number must be within 1024 and 65535.",
-    "Description: pull pulls all the changes done in the server repository into the current one.\nFormat: pit pull <number>\nSpecifics: The command tries to contact localhost:<number>, the number must be within 1024 and 65535.\npull automatically calls fetch, to sync the objects folder\nWhen the server is strictly ahead of the current repo, pull will just put the differences and move the current repo forward. However when there are changes, it will create and move to a temporary branch, that can then be merged into the original branch later.",
+    "Description: pull pulls all the changes done in the server repository's branch into the current one.\nFormat: pit pull <number>\nSpecifics: The command tries to contact localhost:<number>, the number must be within 1024 and 65535.\npull automatically calls fetch, to sync the\nWhen the server is strictly ahead of the current repo, pull will just put the differences and move the current repo forward. However when there are changes, it will perform a 3-way-merge and ask for a commit message.",
+    "Description: push pushes the changes done in the local repository's branch into the one on the server.\nFormat: pit push <number>\nSpecifics: The command tries to contact localhost:<number>, the number must be within 1024 and 65535.\nThe command only goes through if the server is directly behind local. Otherwise call pull to fix issues.",
 };
-std::string install_folder="/home/petar/Documents/pit";
+std::string install_folder="<install_folder>";
 int callPython(std::string func_name, int numArgs, const char* args[])
 {
     Py_Initialize();
@@ -287,6 +288,16 @@ int main(int argc, char* argv[])
         }
         const char *args[2]={current_path_string.c_str(),argv[2]};
         callPython("_pull",2,args);    
+    }
+    else if (strcmp(argv[1],"push")==0)
+    {
+        if (argc!=3)
+        {
+            std::cout<<"Incorrect number of arguments.\n";
+            return 0;
+        }
+        const char *args[2]={current_path_string.c_str(),argv[2]};
+        callPython("_push",2,args);    
     }
     else if (strcmp(argv[1],"help")==0)
     {

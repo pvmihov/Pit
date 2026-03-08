@@ -804,28 +804,28 @@ def get_file_decompr(file):
     answer = raw_text.split('\x1e')
     return answer
 
-def find_common_ancestor(refs_heads, commit1, commit2):
+def find_common_ancestor(object_folder, commit1, commit2):
     dict = {
         commit1 : 1
     }
-    commit1_file = refs_heads / commit1
+    commit1_file = object_folder / commit1
     commit1_info = get_file_decompr(commit1_file)
     father = commit1_info[1]
     while True:
         dict[father]=1
         if father == '-': break
-        father_file = refs_heads / father
+        father_file = object_folder / father
         with father_file.open('rb') as opened1:
             father_info = (zlib.decompress(opened1.read()).decode('utf-8')).split('\x1e')
         father = father_info[1]
     if commit2 in dict:
         return commit2
-    commit2_file = refs_heads / commit2
+    commit2_file = object_folder / commit2
     commit2_info = get_file_decompr(commit2_file)
     father = commit2_info[1]
     while True:
         if father in dict: return father
-        father_file = refs_heads / father
+        father_file = object_folder / father
         with father_file.open('rb') as opened3:
             father_info = (zlib.decompress(opened3.read()).decode('utf-8')).split('\x1e')
         father = father_info[1]

@@ -283,3 +283,30 @@ def _pull(folder_path, server_num):
     except path_logic.ConflictingChanges as err3:
         return err3.message
     return 'Finished pulling from '+str(server_num)   
+
+def _push(folder_path, server_num):
+    cur_folder = Path(folder_path).resolve()
+    if cur_folder.exists()==False:
+        return "Communicator didn't receive valid folder."
+    elif cur_folder.is_dir()==False:
+        return "Communicator didn't receive valid folder."
+    root_folder = _find_root_folder(cur_folder)
+    if root_folder==None:
+        return str(cur_folder)+' is not part of a repository.'
+    try:
+        number = int(server_num)
+    except:
+        return 'The server number must be a number'
+    if number<1024 or number>65535:
+        return 'The server must be a number between 1024 and 65535'
+    try:
+        text = server_logic.push(root_dir=(root_folder / '.pit'),host_num=number)
+        if text:
+            return text
+    except server_logic.ServerError as err:
+        return err.message
+    except path_logic.UncommitedChanges as err2:
+        return err2.message
+    except path_logic.ConflictingChanges as err3:
+        return err3.message
+    return 'Finished pushing to '+str(server_num)   

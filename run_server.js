@@ -7,14 +7,14 @@ import { promisify } from 'node:util';
 const doInflate = promisify(inflate);
 const doDeflate = promisify(deflate);
 import archiver from 'archiver';
+import unzipper from 'unzipper';
 
 const rl = readline.createInterface({
   input: process.stdin,
   output: process.stdout,
 })
 
-//let root_dir = await rl.question('Enter the path that will be used to store project information:\n')
-let root_dir = '/home/petar/images'
+let root_dir = await rl.question('Enter the path that will be used to store project information:\n')
 do{
   try
   {
@@ -63,8 +63,7 @@ catch (err)
   create_pit(root_dir)
 }
 
-//let number = await rl.question('Enter server number between 1024 and 65535:\n')
-let number = 6767
+let number = await rl.question('Enter server number between 1024 and 65535:\n')
 number = parseInt(number)
 while (isNaN(number) || number<1024 || number>65535)
 {
@@ -116,7 +115,7 @@ http
         archive.directory(path.join(root_dir,'.pit', 'objects'), 'objects');
         archive.finalize()
     }
-    else if (request.method === 'GET' && request.url === '/pull')
+    else if (request.method === 'GET' && request.url === '/branch')
     {
       let cur_branch = request.headers['x-current-branch']
       try {
@@ -135,6 +134,29 @@ http
         }
       }
       response.end()
+    }
+    else if (request.method === 'POST' && request.url === '/push')
+    {
+      ///currently the push is kinda unsafe, as it allows files to rewrite what was there
+      const extractStream = unzipper.Extract({ path: path.join(root_dir, '.pit') })
+      extractStream.on('close', async () => {
+            let cur_branch = request.headers['x-current-branch']
+            let cur_commit = request.headers['x-new-last-commit']
+            await fs.writeFile(path.join(root_dir,'.pit','refs','heads',cur_branch),cur_commit)
+            response.status = 200
+            response.end()
+      })
+      extractStream.on('error', (err) => {
+            console.error("Stream extraction failed:", err);
+            response.status = 500
+            response.end()
+      })
+      request.on('error', (err) => {
+            console.error("Stream extraction failed:", err);
+            response.status = 500
+            response.end()
+      })
+      request.pipe(extractStream);
     }
     else
     {
