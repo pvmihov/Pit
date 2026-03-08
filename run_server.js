@@ -2,10 +2,6 @@ import * as readline from 'node:readline/promises';
 import http from 'node:http';
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import { inflate, deflate } from 'node:zlib';
-import { promisify } from 'node:util';
-const doInflate = promisify(inflate);
-const doDeflate = promisify(deflate);
 import archiver from 'archiver';
 import unzipper from 'unzipper';
 
