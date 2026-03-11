@@ -15,7 +15,9 @@ DONE
 -learning node.js for servers
 -pit push,pull,clone
 -potentially pit merge <branch1> <branch2> 
-CURRENT
+-pit clone_heads
 -add calling js as a subprocess in the c++ code
+CURRENT
+-rewriting path_logic so the code can be read by a human being
 TODO
 -pit checkout <commit>: reverts repository to a previous commit

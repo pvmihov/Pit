@@ -2,9 +2,10 @@
 #include<cstring>
 #include<filesystem>
 #include<Python.h>
+#include<cstdlib>
 std::string command_list[]={
     "help", "init", "add", "commit", "log", "restore" ,"retrieve", "checkout", "status", "show", "ls_tree", "branch",
-    "merge", "clone", "fetch", "pull", "push"
+    "merge", "clone", "fetch", "pull", "push", "clone_branch" ,"server",
 };
 std::string main_info="pit is a version control system (VCS), done as a learning project in python.\nFor help on its specific commands try pit help <command>.\nThe list of commands is:\n";
 std::string help_info[]={
@@ -25,8 +26,11 @@ std::string help_info[]={
     "Description: fetch copies the objects folder of the provided server repository into the current one.\nFormat: pit fetch <number>\nSpecifics: The command tries to contact localhost:<number>, the number must be within 1024 and 65535.",
     "Description: pull pulls all the changes done in the server repository's branch into the current one.\nFormat: pit pull <number>\nSpecifics: The command tries to contact localhost:<number>, the number must be within 1024 and 65535.\npull automatically calls fetch, to sync the\nWhen the server is strictly ahead of the current repo, pull will just put the differences and move the current repo forward. However when there are changes, it will perform a 3-way-merge and ask for a commit message.",
     "Description: push pushes the changes done in the local repository's branch into the one on the server.\nFormat: pit push <number>\nSpecifics: The command tries to contact localhost:<number>, the number must be within 1024 and 65535.\nThe command only goes through if the server is directly behind local. Otherwise call pull to fix issues.",
+    "Description: clone_branch copies a branch from the server repository by copying the objects and the head file.\nFormat: pit clone_branch <branch> <number>\nSpecifics: The command tries to contact localhost:<number>, the number must be within 1024 and 65535.",
+    "Description: server launches a listener on localhost where the server information of a project will be stored.\nFormat: pit server <number>\nSpecifics: The command launches a listener on localhost:<number>, the number must be within 1024 and 65535.\nThe procces stores a .pit folder in the current directory from which it is called. Other network commands will use or affect the files in that .pit folder.",
 };
-std::string install_folder="<install_folder>";
+const std::string install_folder="<install_folder>";
+const std::string node_file="/run_server.js";
 int callPython(std::string func_name, int numArgs, const char* args[])
 {
     Py_Initialize();
@@ -298,6 +302,27 @@ int main(int argc, char* argv[])
         }
         const char *args[2]={current_path_string.c_str(),argv[2]};
         callPython("_push",2,args);    
+    }
+    else if (strcmp(argv[1],"clone_branch")==0)
+    {
+        if (argc!=4)
+        {
+            std::cout<<"Incorrect number of arguments.\n";
+            return 0;       
+        }
+        const char *args[3]={current_path_string.c_str(),argv[2],argv[3]};
+        callPython("_clone_branch",3,args);
+    }
+    else if (strcmp(argv[1],"server")==0)
+    {
+        if (argc!=3)
+        {
+            std::cout<<"Incorrect number of arguments.\n";
+            return 0;      
+        }
+
+        std::string command_for_node = "node "+install_folder+node_file+" "+current_path_string+" "+argv[2];
+        std::system(command_for_node.c_str());
     }
     else if (strcmp(argv[1],"help")==0)
     {

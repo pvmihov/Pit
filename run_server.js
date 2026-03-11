@@ -1,38 +1,34 @@
-import * as readline from 'node:readline/promises';
 import http from 'node:http';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import archiver from 'archiver';
 import unzipper from 'unzipper';
 
-const rl = readline.createInterface({
-  input: process.stdin,
-  output: process.stdout,
-})
 
-let root_dir = await rl.question('Enter the path that will be used to store project information:\n')
-do{
-  try
+let root_dir = process.argv[2]
+try
+{
+  const stats = await fs.stat(root_dir)
+  if (!stats.isDirectory())
   {
-    const stats = await fs.stat(root_dir)
-    if (stats.isDirectory())
-    {
-      break;
-    }
-    else
-      {
-        console.log('Path isn\'t a directory.')
-      }
-    }
-    catch (err)
-    {
-      console.log('Couldn\'t open.')
-    }
-    root_dir = await rl.question('Try again:\n')
-}while(true);
+    console.log('Path isn\'t a directory.')
+    process.exit(0)
+  }
+}
+catch (err)
+{
+  console.log('Couldn\'t open.')
+  process.exit(0)
+}
 root_dir = path.resolve(root_dir)
 console.log(`Using ${root_dir} as path.`)
-  
+let number = process.argv[3]
+number = parseInt(number)
+if (isNaN(number) || number<1024 || number>65535)
+{
+  console.log('Please enter a number in the range 1024 and 65535:\n')
+  process.exit(0) 
+}
 async function create_pit(root_dir)
 {
   console.log('.pit folder does not exist, so I am creating one.')
@@ -41,7 +37,6 @@ async function create_pit(root_dir)
   await fs.mkdir(path.join(root_dir,'.pit','refs','heads'),{recursive:true})
   await fs.writeFile(path.join(root_dir,'.pit','refs','heads','Main'),'-')
 }
-
 try
 {
   let pit_dir = await fs.stat( path.join(root_dir,'.pit') )
@@ -59,15 +54,7 @@ catch (err)
   create_pit(root_dir)
 }
 
-let number = await rl.question('Enter server number between 1024 and 65535:\n')
-number = parseInt(number)
-while (isNaN(number) || number<1024 || number>65535)
-{
-  number = await rl.question('Please enter a number in the range 1024 and 65535:\n')
-  number = parseInt(number)
-}
-rl.close()
-console.log(`Using localhost:${number} as server`)
+console.log(`Using localhost:${number} as server.(Press Ctr-C to close)`)
 
 http
   .createServer(async (request, response) => {

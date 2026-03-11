@@ -1,6 +1,4 @@
 from pathlib import Path
-import hashlib
-import zlib
 import path_logic
 import urllib.request
 import urllib.error
@@ -119,7 +117,6 @@ def pull(project_dir, host_num):
         cur_head_file.write_text(cur_tree)
         temp_head_file.unlink()
         raise err  
-        
     
 def push(root_dir, host_num):
     cur_branch = find_cur_branch(root_dir)
@@ -176,3 +173,30 @@ def push(root_dir, host_num):
         raise ServerError('Server failed to handle request.')  
     except urllib.error.URLError:
         raise ServerError('Failed to connect to server.')
+    
+def clone_branch(root_dir, branch_name, host_num):
+    head_file_wanted = root_dir / 'refs' / 'heads' / branch_name
+    if head_file_wanted.exists():
+        return f'{branch_name} already exists in the local repository'
+    try:
+        fetch(root_dir, host_num)
+    except ServerError as err:
+        raise err
+    request = urllib.request.Request(url=f'http://localhost:{host_num}/branch',data=None,headers={'content-type':'text/plain', 'X-Current-Branch': branch_name},method='GET')
+    print(f'Attempting to contact localhost:{host_num}')
+    try:
+        with urllib.request.urlopen(request) as response:
+            if response.status == 200:
+                print('Connection succeeded. Begging pulling')
+                branch_head = response.read()
+                branch_head = branch_head.decode('utf-8')
+            elif response.status == 204:
+                return f'{branch_name} does not exist on localhost:{host_num}'
+            else:
+                raise ServerError('Server returned wrong status.')
+    except urllib.error.HTTPError:
+        raise ServerError('Server failed to handle request.')  
+    except urllib.error.URLError:
+        raise ServerError('Failed to connect to server.')
+    head_file_wanted.write_text(branch_head)
+    return ''

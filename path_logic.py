@@ -834,7 +834,7 @@ def fast_forward_merge(root_dir, branch_name, cur_branch_file, commit_them):
     try:
         checkout(root_dir,branch_name)
     except UncommitedChanges as error:
-        raise UncommitedChanges(error.message)
+        raise error
     cur_branch_file.write_text(commit_them)
 
 def find_all_changes(object_dir, lca_tree, us_tree, them_tree):
