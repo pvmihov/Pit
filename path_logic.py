@@ -1,8 +1,14 @@
 from pathlib import Path
 import hashlib
 import zlib
+from logic_classes import (
+    Pit_file,
+    Index,
+    File_entry,
+)
+from typing import List
 
-def sha1_file(file):
+def sha1_file(file : Path):
     #returns sha-1 encryption of file
     hash = hashlib.sha1()
     with file.open('rb') as curfile:
@@ -10,7 +16,7 @@ def sha1_file(file):
             hash.update(chunk)
     return hash.hexdigest()
 
-def create_blob(root_dir, file):
+def create_blob(root_dir : Path, file : Path):
     #creates blob in the objects folder
     hash = sha1_file(file)
     blob = root_dir / 'objects' / hash
@@ -21,7 +27,7 @@ def create_blob(root_dir, file):
     blob.write_bytes(compressed_data)
     return hash
 
-def init(project_dir):
+def init(project_dir : Path):
     #initialises all the needed files 
     dot_pit_folder = project_dir / '.pit'
     try:
@@ -43,7 +49,7 @@ def init(project_dir):
     index_file.write_bytes(compresed_info)
     return True
 
-def find_index(index,num_blobs,file_name):
+def find_index_old(index,num_blobs,file_name):
     #performs binary search and returns index of first filename in index that is smaller or equal to file_name
     l=0
     r=num_blobs+1
@@ -65,14 +71,12 @@ def decompress_index(index_file):
     index.pop()
     return index
 
-def add_file(root_dir,file):
+def add_file(root_dir : Path, file : Path):
     if file.resolve().is_relative_to(root_dir.resolve()): return
     #runs command pit add file
     #receives a path object called file and changes the index accordingly
     project_dir = root_dir.parent
-    index_file = root_dir / 'index'
-    index = decompress_index(index_file)
-    num_blobs = int(index[0])
+    index = Index(root_dir)
     file_name = str(file)
     name_dir = str(project_dir)
     if name_dir=='.': name_dir=''
@@ -81,57 +85,54 @@ def add_file(root_dir,file):
         #means file was updated
         hash = create_blob(root_dir,file)
         creation = -1
-        if num_blobs == 0:
+        if index.number_of_files == 0:
             #we have to create the file, it is also the first file
             creation = 0
         else: 
-            position = find_index(index,num_blobs,file_name)
-            if position==0:
-                creation = position
-            cur_position_split = index[position].split('\x1d')
-            if cur_position_split[0]!=file_name: 
-                creation = position
+            position = index.find_file_in_index(file_name)
+            if position==-1:
+                creation = position+1
+            cur_file_entry = index.files[position]
+            if cur_file_entry.name!=file_name: 
+                creation = position+1
         if creation!=-1:
             #this means we have to create the file
-            new_index_text = str(num_blobs+1)+'\x1e'
-            for i in range(1,creation+1): new_index_text+=(index[i]+'\x1e')
-            new_index_text+=(file_name+'\x1d'+hash+'\x1dTrue\x1dTrue\x1e')
-            for i in range(creation+1,len(index)): new_index_text+=(index[i]+'\x1e')
-            new_index_bytes = new_index_text.encode('utf-8')
-            new_index_compressed = zlib.compress(new_index_bytes)
-            index_file.write_bytes(new_index_compressed)   
+            new_entry = File_entry(name=file_name,hash=hash,has_bools=True,exists=True,changed=True)
+            index.add_single_file(creation,new_entry)
         else:
             #this means file is in the index at line, position
-            cur_position_split = index[position].split('\x1d')
-            if cur_position_split[1]==hash:
+            cur_file_entry = index.files[creation]
+            if cur_file_entry.hash==hash:
                 #means nothing was changed, so we shouldnt change nothing
                 return
             #here the file was actually changed
-            cur_position_split[1]=hash
-            index[position]=cur_position_split[0]+'\x1d'+cur_position_split[1]+'\x1dTrue\x1dTrue'
-            new_index_text = ''
-            for tex in index: new_index_text+=(tex+'\x1e')
-            new_index_bytes = new_index_text.encode('utf-8')
-            new_index_compressed = zlib.compress(new_index_bytes)
-            index_file.write_bytes(new_index_compressed)
+            index.files[creation].hash = hash
+            index.files[creation].changed = True
+        index.write_to_file()    
     else:
         #means file was deleted
         #we want to change exist property to false and changed property to true
-        if num_blobs == 0: return # there arent blobs, so 
-        position = find_index(index,num_blobs,file_name)
+        if index.number_of_files == 0: return # there arent blobs, so 
+        position = index.find_file_in_index(file_name)
         if position==0: return #the file wasnt in the index, so no need to do anything
-        cur_position_split = index[position].split('\x1d')
-        if cur_position_split[0]!=file_name: return #the file wasnt in the index
+        cur_file_entry = index.files[position]
+        if cur_file_entry.name!=file_name: return #the file wasnt in the index
         #if we are here this means that the file is actually in index and we need to change the information
-        if cur_position_split[2] != 'False' or cur_position_split[2]!='True':
-            new_index_text = ''
-            index[position]=cur_position_split[0]+'\x1d'+'...'+'\x1d'+'False'+'\x1d'+'True'
-            for tex in index: new_index_text+=(tex+'\x1e')
-            new_index_bytes = new_index_text.encode('utf-8')
-            new_index_compressed = zlib.compress(new_index_bytes)
-            index_file.write_bytes(new_index_compressed)
+        if cur_file_entry.exists or (not cur_file_entry.changed):
+            index.files[position]=File_entry(name=file_name,hash='...',has_bools=True,exists=False,changed=True)
+            index.write_to_file()
 
 class Tree_node:
+    hash : str
+    father : str
+    name : str
+    num_files : int
+    num_files : int
+    file_names : List[str]
+    file_blobs : List[str]
+    tree_names : List[str]
+    tree_blobs : List[str]
+
     def __init__(self):
         self.hash = ''
         self.father = ""
@@ -143,7 +144,7 @@ class Tree_node:
         self.tree_names = []
         self.tree_blobs = [] 
         
-def get_folder(file_name):
+def get_folder(file_name : str):
     #receives the name of a file, and returns what folder its in
     slash = -1
     for i in range(0,len(file_name)):
@@ -153,13 +154,13 @@ def get_folder(file_name):
     for i in range(0,slash): par_name+=file_name[i]
     return par_name
 
-def sha1_text(text):
+def sha1_text(text : str):
     #returns sha1 encryption of text
     hash = hashlib.sha1()
     hash.update(text.encode('utf-8'))
     return hash.hexdigest()
 
-def create_tree(root_dir,tree_info):
+def create_tree(root_dir : Path,tree_info : str):
     hash = sha1_text(tree_info)
     blob = root_dir / 'objects' / hash
     if blob.exists():
@@ -168,29 +169,25 @@ def create_tree(root_dir,tree_info):
     blob.write_bytes(compressed_data)
     return hash
 
-def commit(root_dir,commit_message):
+def commit(root_dir : Path, commit_message : str):
     #commits the changes in index
-    project_dir = root_dir.parent
-    index_file = root_dir / 'index'
-    index = decompress_index(index_file)
-    num_blobs = int(index[0])
+    index = Index(root_dir)
     num_trees = 1
     tree_dic={
         '.': 0
     }
-    tree_array = []
+    tree_array: List[Tree_node] = []
     tree_array.append(Tree_node())
     tree_array[0].name = '.'
     changed = []
     existing_files = 0
-    for i in range(1,num_blobs+1):
-        splited = index[i].split('\x1d')
-        if splited[3]=='True':
-            changed.append([splited[0],splited[2]])
-        if splited[2]=='False': 
+    for cur_entry in index.files:
+        if cur_entry.changed:
+            changed.append([cur_entry.name,cur_entry.exists])
+        if not cur_entry.exists: 
             continue
         existing_files+=1
-        father = get_folder(splited[0])
+        father = get_folder(cur_entry.name)
         num = -1
         if father in tree_dic:
             num=tree_dic[father]
@@ -202,8 +199,8 @@ def commit(root_dir,commit_message):
             num=num_trees
             num_trees+=1
         tree_array[num].num_files+=1
-        tree_array[num].file_names.append(splited[0])
-        tree_array[num].file_blobs.append(splited[1])
+        tree_array[num].file_names.append(cur_entry.name)
+        tree_array[num].file_blobs.append(cur_entry.hash)
         while True:
             father = get_folder(father)
             if father in tree_dic: break
@@ -212,13 +209,14 @@ def commit(root_dir,commit_message):
             tree_array[num_trees].name=father
             tree_array[num_trees].father = get_folder(father)
             num_trees+=1
-    new_index = str(existing_files)+'\x1e'
-    for i in range(1,num_blobs+1):
-        splited = index[i].split('\x1d')
-        if splited[2]=='False': 
+    index.number_of_files = existing_files
+    copy_ogindex_files : List[File_entry] = index.files.copy()
+    index.files.clear()
+    for cur_entry in copy_ogindex_files:
+        if not cur_entry: 
             continue
-        new_index+=splited[0]+'\x1d'+splited[1]+'\x1dTrue\x1dFalse\x1e'
-    new_index+=str(num_trees)+'\x1e'
+        index.files.append(File_entry(cur_entry.name,cur_entry.hash,True,True,False))
+    index.number_of_trees = num_trees
     root_tree = ''
     for cur_key, cur_num in sorted(tree_dic.items(),reverse=True):
         cur_tree = tree_array[cur_num]
@@ -238,31 +236,24 @@ def commit(root_dir,commit_message):
         tree_array[par_num].num_trees+=1
         tree_array[par_num].tree_names.append(cur_tree.name)
         tree_array[par_num].tree_blobs.append(hash)
+    index.trees.clear()
     for cur_key, cur_num in sorted(tree_dic.items()):
         cur_tree = tree_array[cur_num]
-        new_index+=cur_key+'\x1d'+cur_tree.hash+'\x1e'
-    new_index_bytes = new_index.encode('utf-8')
-    new_index_compressed = zlib.compress(new_index_bytes)
-    index_file.write_bytes(new_index_compressed)
-    head_file = root_dir / 'HEAD'
-    with head_file.open('rb') as head_opened:
-        cur_branch = head_opened.read()
-    cur_branch = cur_branch.decode('utf-8')
-    branch_head = root_dir / 'refs' / 'heads' / cur_branch
-    with branch_head.open('rb') as branch_head_opened:
-        previous_commit = branch_head_opened.read()
-    previous_commit = previous_commit.decode('utf-8')
+        index.trees.append(File_entry(name=cur_key,hash=cur_tree.hash))
+    index.write_to_file()
+    head_file = Pit_file(root_dir / 'HEAD', is_compr=False)
+    cur_branch = head_file.get_value_text()
+    branch_head = Pit_file(root_dir / 'refs' / 'heads' / cur_branch,is_compr=False)
+    previous_commit = branch_head.get_value_text()
     commit_info = commit_message+'\x1e'+previous_commit+'\x1e'+root_tree+'\x1e'
     commit_info+=str(len(changed))+'\x1e'
     for ch in changed:
-        commit_info+=ch[0]+'\x1d'+ch[1]+'\x1e'
+        commit_info+=ch[0]+'\x1d'+str(ch[1])+'\x1e'
     commit_hash = create_tree(root_dir=root_dir,tree_info=commit_info)
-    branch_head.write_text(commit_hash)
+    branch_head.write_value_from_text(commit_hash)
 
 def log(root_dir):
     #returns information for all previous commits in current branch
-    index_file = root_dir / 'index'
-    index = decompress_index(index_file)
     head_file = root_dir / 'HEAD'
     with head_file.open('rb') as head_opened:
         cur_branch = head_opened.read()
@@ -642,7 +633,7 @@ def add_folder(root_dir, folder_dir):
     else:
         folder_name = ''
     list_files = list_files_in_dir(root_dir,folder_dir,folder_name,str(project_dir))
-    begin = find_index(index,num_blobs,folder_name)+1
+    begin = find_index_old(index,num_blobs,folder_name)+1
     end = begin
     for i in range(begin,len(index)):
         if i>num_blobs:
@@ -692,7 +683,7 @@ def status(root_dir,file):
     name_dir = str(project_dir)
     if name_dir=='.': name_dir=''
     file_name = file_name.removeprefix(str(project_dir)+'/')
-    position = find_index(index,num_blobs,file_name)
+    position = find_index_old(index,num_blobs,file_name)
     split = index[position].split('\x1d')
     if split[0]!=file_name:
         return 'Untracked'
@@ -988,7 +979,7 @@ def merge(root_dir, branch_name, ask_for_comm_name=True):
     lst_ch = 1
     new_num_files = int(index[0])
     for change in do_change:
-        fdd = find_index(index,int(index[0]),change[0])
+        fdd = find_index_old(index,int(index[0]),change[0])
         #print(change[0]+' '+change[1]+' '+str(fdd))
         if (index[fdd].split('\x1d'))[0]==change[0]:
             #we have a change in the file
