@@ -8,7 +8,7 @@ class Pit_file:
     file_name : str
     is_compr : bool
 
-    def __init__(self, file_object : Path, is_compr : bool):
+    def __init__(self, file_object : Path, is_compr : bool = False):
         self.path_object = file_object
         self.file_name = str(file_object)
         self.is_compr = is_compr
@@ -55,12 +55,12 @@ class File_entry:
             return cls(name,hash,has_bools,exists,changed)
         else: return cls(name,hash)
     
-    def turn_to_text(self) -> str:
-        text = self.name+'\x1d'+self.hash
+    def turn_to_text(self, delimitor : str = '\x1d') -> str:
+        text = self.name+delimitor+self.hash
         if self.has_bools:
             ex_text = str(self.exists)
             ch_text = str(self.changed)
-            text+='\x1d'+ex_text+'\x1d'+ch_text
+            text+=delimitor+ex_text+delimitor+ch_text
         return text
 
 class Index(Pit_file):
@@ -69,18 +69,25 @@ class Index(Pit_file):
     files : List[File_entry]
     trees : List[File_entry]
 
-    def __init__(self, root_dir):
+    def __init__(self, root_dir : Path):
         super().__init__(root_dir / 'index', is_compr = True)
-        value_text = self.get_value_text()
-        value_splitted = value_text.split('\x1e')
-        self.number_of_files = int(value_splitted[0])
+        self.number_of_files = 0
+        self.number_of_trees = 0
         self.files = []
-        for line in value_splitted[1:1+self.number_of_files]:
-            self.files.append( File_entry.from_line(line,True) )
-        self.number_of_trees = int(value_splitted[1+self.number_of_files])
         self.trees = []
-        for line in value_splitted[2+self.number_of_files:2+self.number_of_files+self.number_of_trees]:
-            self.trees.append( File_entry.from_line(line) )
+
+    @classmethod
+    def from_file(cls, root_dir : Path):
+        index = cls(root_dir)
+        value_text = index.get_value_text()
+        value_splitted = value_text.split('\x1e')
+        index.number_of_files = int(value_splitted[0])
+        for line in value_splitted[1:1+index.number_of_files]:
+            index.files.append( File_entry.from_line(line,True) )
+        index.number_of_trees = int(value_splitted[1+index.number_of_files])
+        for line in value_splitted[2+index.number_of_files:2+index.number_of_files+index.number_of_trees]:
+            index.trees.append( File_entry.from_line(line) )
+        return index
 
     def find_file_in_index(self, file_name : str) -> int:
         l = -1
@@ -95,6 +102,10 @@ class Index(Pit_file):
         self.number_of_files += 1
         self.files = self.files[:position] + [new_entry] + self.files[position:]
 
+    def add_file_list_by_position(self, begin : int, end : int, new_entries : List[File_entry]):
+        self.files = self.files[:begin] + new_entries + self.files[end:]
+        self.number_of_files = len(self.files)
+
     def write_to_file(self, sort_files : bool = False , sort_trees : bool = False):
         if sort_files:
             self.files.sort(key=lambda x:x.name)
@@ -107,4 +118,13 @@ class Index(Pit_file):
         for tree in self.trees:
             index_text += tree.turn_to_text()+'\x1e'
         self.write_value_from_text(index_text)
+
+    def turn_to_text(self) -> str:
+        index_text = str(self.number_of_files)+'\n'
+        for file in self.files:
+            index_text += file.turn_to_text(delimitor=' ')+'\n'
+        index_text += str(self.number_of_trees)+'\n'
+        for tree in self.trees:
+            index_text += tree.turn_to_text(delimitor=' ')+'\n'
+        return index_text
     
