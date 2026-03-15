@@ -5,6 +5,7 @@ from logic_classes import (
     Pit_file,
     Index,
     File_entry,
+    Tree,
 )
 from typing import List
 
@@ -98,7 +99,7 @@ def add_file(root_dir : Path, file : Path):
         if creation!=-1:
             #this means we have to create the file
             new_entry = File_entry(name=file_name,hash=hash,has_bools=True,exists=True,changed=True)
-            index.add_single_file(creation,new_entry)
+            index.add_single_file_by_position(creation,new_entry)
         else:
             #this means file is in the index at line, position
             cur_file_entry = index.files[creation]
@@ -121,28 +122,6 @@ def add_file(root_dir : Path, file : Path):
         if cur_file_entry.exists or (not cur_file_entry.changed):
             index.files[position]=File_entry(name=file_name,hash='...',has_bools=True,exists=False,changed=True)
             index.write_to_file()
-
-class Tree_node:
-    hash : str
-    father : str
-    name : str
-    num_files : int
-    num_files : int
-    file_names : List[str]
-    file_blobs : List[str]
-    tree_names : List[str]
-    tree_blobs : List[str]
-
-    def __init__(self):
-        self.hash = ''
-        self.father = ""
-        self.name = ""
-        self.num_files = 0
-        self.file_names = []
-        self.file_blobs = []
-        self.num_trees = 0
-        self.tree_names = []
-        self.tree_blobs = [] 
         
 def get_folder(file_name : str) -> str:
     #receives the name of a file, and returns what folder its in
@@ -154,14 +133,14 @@ def get_folder(file_name : str) -> str:
     for i in range(0,slash): par_name+=file_name[i]
     return par_name
 
-def sha1_text(text : str) -> str:
+def sha1_text_old(text : str) -> str:
     #returns sha1 encryption of text
     hash = hashlib.sha1()
     hash.update(text.encode('utf-8'))
     return hash.hexdigest()
 
-def create_tree(root_dir : Path,tree_info : str) -> str:
-    hash = sha1_text(tree_info)
+def create_filecompr_from_text_old(root_dir : Path,tree_info : str) -> str:
+    hash = sha1_text_old(tree_info)
     blob = root_dir / 'objects' / hash
     if blob.exists():
         return hash
@@ -176,8 +155,8 @@ def commit(root_dir : Path, commit_message : str):
     tree_dic={
         '.': 0
     }
-    tree_array: List[Tree_node] = []
-    tree_array.append(Tree_node())
+    tree_array: List[Tree] = []
+    tree_array.append(Tree(object_file=(root_dir / 'objects' / '...')))
     tree_array[0].name = '.'
     changed = []
     existing_files = 0
@@ -193,19 +172,18 @@ def commit(root_dir : Path, commit_message : str):
             num=tree_dic[father]
         else:
             tree_dic[father]=num_trees
-            tree_array.append(Tree_node())
+            tree_array.append(Tree(object_file=(root_dir / 'objects' / '...')))
             tree_array[num_trees].name=father
             tree_array[num_trees].father = get_folder(father)
             num=num_trees
             num_trees+=1
         tree_array[num].num_files+=1
-        tree_array[num].file_names.append(cur_entry.name)
-        tree_array[num].file_blobs.append(cur_entry.hash)
+        tree_array[num].files.append(File_entry(name=cur_entry.name,hash=cur_entry.hash))
         while True:
             father = get_folder(father)
             if father in tree_dic: break
             tree_dic[father]=num_trees
-            tree_array.append(Tree_node())
+            tree_array.append(Tree(object_file=(root_dir / 'objects' / '...')))
             tree_array[num_trees].name=father
             tree_array[num_trees].father = get_folder(father)
             num_trees+=1
@@ -220,22 +198,13 @@ def commit(root_dir : Path, commit_message : str):
     root_tree = ''
     for cur_key, cur_num in sorted(tree_dic.items(),reverse=True):
         cur_tree = tree_array[cur_num]
-        tree_info = cur_tree.name+'\x1e'
-        tree_info += str(cur_tree.num_files)+'\x1e'
-        for i in range(0,cur_tree.num_files):
-            tree_info+= cur_tree.file_names[i]+'\x1d'+cur_tree.file_blobs[i]+'\x1e'
-        tree_info += str(cur_tree.num_trees)+'\x1e'
-        for i in range(0,cur_tree.num_trees):
-            tree_info+= cur_tree.tree_names[i]+'\x1d'+cur_tree.tree_blobs[i]+'\x1e'
-        hash = create_tree(root_dir,tree_info)
-        cur_tree.hash = hash
+        cur_tree.write_to_file(fix=True)
         if cur_tree.father=='':
-            root_tree = hash
+            root_tree = cur_tree.hash
             continue
         par_num = tree_dic[cur_tree.father]
         tree_array[par_num].num_trees+=1
-        tree_array[par_num].tree_names.append(cur_tree.name)
-        tree_array[par_num].tree_blobs.append(hash)
+        tree_array[par_num].trees.append(File_entry(name=cur_tree.name,hash=cur_tree.hash))
     index.trees.clear()
     for cur_key, cur_num in sorted(tree_dic.items()):
         cur_tree = tree_array[cur_num]
@@ -249,7 +218,7 @@ def commit(root_dir : Path, commit_message : str):
     commit_info+=str(len(changed))+'\x1e'
     for ch in changed:
         commit_info+=ch[0]+'\x1d'+str(ch[1])+'\x1e'
-    commit_hash = create_tree(root_dir=root_dir,tree_info=commit_info)
+    commit_hash = create_filecompr_from_text_old(root_dir=root_dir,tree_info=commit_info)
     branch_head.write_value_from_text(commit_hash)
 
 def log(root_dir : Path) -> str:
@@ -289,32 +258,21 @@ class UnableToRetrieve(Exception):
         self.message = message
         super().__init__(message)
 
-def find_file(root_dir : Path, cur_tree : str, file_name : str) -> bool:
-    tree_file = root_dir / 'objects' / cur_tree
-    with tree_file.open('rb') as tree_file_opened:
-        tree_compr = tree_file_opened.read()
-    tree_text = zlib.decompress(tree_compr).decode('utf-8')
-    tree_info = tree_text.split('\x1e')
-    tree_info.pop()
-    num_files = int(tree_info[1])
-    if get_folder(file_name)==tree_info[0]:
+def find_file(root_dir : Path, cur_tree : str, file_name : str):
+    tree = Tree.from_file(root_dir / 'objects' / cur_tree)
+    if get_folder(file_name)==tree.name:
         #this means we are searching for the file itself in the list of files
-        for i in range(2,2+num_files):
-            spl = tree_info[i].split('\x1d')
-            if spl[0]!=file_name: continue
-            file = root_dir / 'objects' / spl[1]
-            with file.open('rb') as file_opened:
-                file_compr = file_opened.read()
-            file_bytes = zlib.decompress(file_compr)
+        for cur_entry in tree.files:
+            if cur_entry.name!=file_name: continue
+            file = Pit_file(file_object=root_dir / 'objects' / cur_entry.hash, is_compr=True)
+            file_bytes = file.get_value_bytes()
             return file_bytes
         return False
     else:
         #this means we are searching for a folder inside the list of folders
-        num_folders = int(tree_info[2+num_files])
-        for i in range(3+num_files,3+num_files+num_folders):
-            spl = tree_info[i].split('\x1d')
-            if file_name.startswith(spl[0]):
-                return find_file(root_dir,spl[1],file_name)
+        for cur_entry in tree.trees:
+            if file_name.startswith(cur_entry.name):
+                return find_file(root_dir,cur_entry.hash,file_name)
         return False
 
 def create_file(file : Path, bytes : bytes):
@@ -332,15 +290,10 @@ def retrieve(root_dir : Path, commit_name : str, file_name : str, create : bool,
     #finds the file with file_name and the version it had after commit_name
     #if create is true, it creates the file in create_place
     #else it just returns the value as bits
-    head_file = root_dir / 'HEAD'
-    with head_file.open('rb') as head_opened:
-        cur_branch = head_opened.read()
-    cur_branch = cur_branch.decode('utf-8')
-    branch_head = root_dir / 'refs' / 'heads' / cur_branch
-    with branch_head.open('rb') as branch_head_opened:
-        last_commit = branch_head_opened.read()
-    last_commit = last_commit.decode('utf-8')
-    log_text = ''
+    head_file = Pit_file(root_dir / 'HEAD')
+    cur_branch = head_file.get_value_text()
+    branch_head = Pit_file(root_dir / 'refs' / 'heads' / cur_branch)
+    last_commit = branch_head.get_value_text()
     if commit_name=='last': commit_name=last_commit
     while last_commit!=commit_name:
         if last_commit=='-':
@@ -689,7 +642,7 @@ class NonExistentTree(Exception):
         self.message=message
         super().__init__(message)
 
-def print_tree(root_dir, tree_name):
+def print_tree(root_dir : Path, tree_name : str):
     tree_obj = (root_dir / 'objects' / tree_name)
     with (tree_obj.open('rb')) as tree_opened:
         tree_compr = tree_opened.read()
@@ -713,7 +666,7 @@ def print_tree(root_dir, tree_name):
             else: answer.append(new_line)
     return answer
 
-def ls_tree(root_dir, commit_name):
+def ls_tree(root_dir : Path, commit_name : str):
     #returns how the directory looks in the given commit
     head_file = root_dir / 'HEAD'
     with head_file.open('rb') as head_opened:
@@ -741,7 +694,7 @@ def ls_tree(root_dir, commit_name):
         text_result+='\n'
     return text_result
 
-def branch_list(root_dir):
+def branch_list(root_dir : Path):
     head_file = root_dir / 'HEAD'
     with head_file.open('rb') as head_opened:
         cur_branch = head_opened.read()
@@ -760,7 +713,7 @@ class NonExistentBranch(Exception):
         self.message = msg
         super().__init__(self.message)
 
-def get_file_decompr(file):
+def get_file_decompr(file : Path):
     with file.open('rb') as opened:
         compressed = opened.read()
     decompressed = zlib.decompress(compressed)
@@ -768,7 +721,7 @@ def get_file_decompr(file):
     answer = raw_text.split('\x1e')
     return answer
 
-def find_common_ancestor(object_folder, commit1, commit2):
+def find_common_ancestor(object_folder : Path, commit1 : str, commit2 : str):
     dict = {
         commit1 : 1
     }
@@ -794,14 +747,14 @@ def find_common_ancestor(object_folder, commit1, commit2):
             father_info = (zlib.decompress(opened3.read()).decode('utf-8')).split('\x1e')
         father = father_info[1]
 
-def fast_forward_merge(root_dir, branch_name, cur_branch_file, commit_them):
+def fast_forward_merge(root_dir : Path, branch_name : str, cur_branch_file, commit_them : str):
     try:
         checkout(root_dir,branch_name)
     except UncommitedChanges as error:
         raise error
     cur_branch_file.write_text(commit_them)
 
-def find_all_changes(object_dir, lca_tree, us_tree, them_tree):
+def find_all_changes(object_dir : Path, lca_tree : str, us_tree : str, them_tree : str):
     if lca_tree!='...': lca_info = get_file_decompr(object_dir / lca_tree)
     else: lca_info = ['none','0','0']
     if us_tree!='...': us_info= get_file_decompr(object_dir / us_tree)
@@ -882,14 +835,11 @@ class ConflictingChanges(Exception):
         self.message = msg
         super().__init__(self.message)
 
-def merge(root_dir, branch_name, ask_for_comm_name=True):
+def merge(root_dir : Path, branch_name : str, ask_for_comm_name : bool = True):
     #merges branch with branch_name to the current branch
-    index_file = root_dir / 'index'
-    index = decompress_index(index_file)
-    num_blobs = int(index[0])
-    for i in range(1,1+num_blobs):
-        spl = index[i].split('\x1d')
-        if spl[3]=='True':
+    index = Index.from_file(root_dir)
+    for cur_entry in index.files:
+        if cur_entry.changed:
             raise UncommitedChanges('Please commit all changes before merging branches.')
     head_file = root_dir / 'HEAD'
     with head_file.open('rb') as head_opened:
@@ -947,38 +897,9 @@ def merge(root_dir, branch_name, ask_for_comm_name=True):
                 if change[2]!='...':
                     raise ConflictingChanges('There are conflicting changes in the current branch, not added to index.')
             do_change.append([change[0],change[3]])
-    do_change.sort(key=lambda x:x[0])
-    new_index_text = '\x1e'
-    lst_ch = 1
-    new_num_files = int(index[0])
-    for change in do_change:
-        fdd = find_index_old(index,int(index[0]),change[0])
-        #print(change[0]+' '+change[1]+' '+str(fdd))
-        if (index[fdd].split('\x1d'))[0]==change[0]:
-            #we have a change in the file
-            for line in index[lst_ch:fdd]:
-                new_index_text+=line+'\x1e'
-            lst_ch = fdd+1
-            if change[1]!='...':
-                #we don't have a deletion, so we have to add the file as existing
-                new_index_text+=change[0]+'\x1d'+change[1]+'\x1dTrue\x1dTrue\x1e'
-            else:
-                #we have to add it as deleted
-                new_index_text+=change[0]+'\x1d...\x1dFalse\x1dTrue\x1e'
-        else:
-            #we have a new file
-            for line in index[lst_ch:fdd+1]:
-                new_index_text+=line+'\x1e'
-            lst_ch = fdd+1
-            if change[1]=='...':
-                print('THIS IS A BIG ERROR, IT SHOULD NEVER HAPPEN')
-            new_index_text+=change[0]+'\x1d'+change[1]+'\x1dTrue\x1dTrue\x1e'
-            new_num_files+=1
-    new_index_text = str(new_num_files)+new_index_text
-    for line_index in index[lst_ch:]:
-        new_index_text+=line_index+'\x1e'
-    new_index_compr = zlib.compress(new_index_text.encode('utf-8'))
-    index_file.write_bytes(new_index_compr)
+    index.add_file_list_general(do_change)
+    print(index.turn_to_text())
+    index.write_to_file()
     for change in do_change:
         file_obj = Path(project_dir_name+'/'+change[0])
         if (change[1]=='...'):
@@ -993,6 +914,7 @@ def merge(root_dir, branch_name, ask_for_comm_name=True):
                 else: break
                 cname = get_folder(cname)
         else:
+            print(change[0])
             with (root_dir / 'objects' / change[1]).open('rb') as file_opened:
                 file_compressed = file_opened.read()
             file_bytes = zlib.decompress(file_compressed)
@@ -1000,7 +922,7 @@ def merge(root_dir, branch_name, ask_for_comm_name=True):
     commit(root_dir,new_merge_commit)
     return 2
 
-def iterate_tree(root_dir, main_tree):
+def iterate_tree(root_dir : Path, main_tree : str):
     if main_tree=='-':
         return []
     tree_info = get_file_decompr(root_dir / 'objects' / main_tree)
@@ -1017,7 +939,7 @@ def iterate_tree(root_dir, main_tree):
             ans.append(new_ans)
     return ans
 
-def put_content_after_clone(root_dir):
+def put_content_after_clone(root_dir : Path):
     project_dir = root_dir.parent
     refs_heads = root_dir / 'refs' / 'heads' / 'Main'
     with refs_heads.open('rb') as opened:
@@ -1025,32 +947,20 @@ def put_content_after_clone(root_dir):
     last_commit = root_dir / 'objects' / refs_heads_text
     head_file = root_dir / 'HEAD'
     head_file.write_text('Main')
-    all_files = []
-    all_trees = []
-    contents = []
+    contents = List[list]
+    index = Index(root_dir)
     if refs_heads_text != '-':
         commit_info = get_file_decompr(last_commit)
         main_tree = commit_info[2]
         contents = iterate_tree(root_dir, main_tree)
     for content in contents:
         if content[2]:
-            all_files.append([content[0],content[1]])
-            blob = root_dir / 'objects' / content[1]
-            with blob.open('rb') as opened_blob:
-                compr_blob = opened_blob.read()
-            bytes_blob = zlib.decompress(compr_blob)
+            index.files.append(File_entry(name=content[0],hash=content[1],has_bools=True,exists=True,changed=False))
+            blob_file = Pit_file(file_object=root_dir / 'objects' / content[1],is_compr=True)
             new_file = project_dir / content[0]
-            create_file(new_file,bytes_blob)
+            create_file(new_file,blob_file.get_value_bytes())
         else:
-            all_trees.append([content[0],content[1]]) 
-    all_files.sort(key= lambda x:x[0])
-    all_trees.sort(key= lambda x:x[0])
-    index_text = str(len(all_files))+'\x1e'
-    for file in all_files:
-        index_text+=file[0]+'\x1d'+file[1]+'\x1dTrue\x1dFalse\x1e'
-    index_text+=str(len(all_trees))+'\x1e'
-    for tree in all_trees:
-        index_text+=tree[0]+'\x1d'+tree[1]+'\x1e'
-    index_compr = zlib.compress( index_text.encode('utf-8') )
-    index_file = root_dir / 'index'
-    index_file.write_bytes(index_compr)
+            index.trees.append(File_entry(name=content[0],hash=content[1]))
+    index.number_of_files = len(index.files)
+    index.number_of_trees = len(index.trees)
+    index.write_to_file(sort_files=True,sort_trees=True)

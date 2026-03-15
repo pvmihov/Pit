@@ -20,6 +20,13 @@ class Pit_file:
             file_content = zlib.decompress(file_compressed)
             file_text = file_content.decode('utf-8')
         return file_text
+    def get_value_bytes(self) -> bytes:
+        if not self.is_compr:
+            file_bytes = self.path_object.read_bytes()
+        else:
+            file_compressed = self.path_object.read_bytes()    
+            file_bytes = zlib.decompress(file_compressed)
+        return file_bytes     
     def write_value_from_text(self, text : str):
         if self.is_compr:
             bytes = text.encode('utf-8')
@@ -27,6 +34,28 @@ class Pit_file:
             self.path_object.write_bytes(bytes_compressed)
         else:
             self.path_object.write_text(text)
+    def write_value_from_bytes(self, bytes : bytes):
+        if self.is_compr:
+            bytes_compressed = zlib.compress(bytes)
+            self.path_object.write_bytes(bytes_compressed)
+        else:
+            self.path_object.write_bytes(bytes)
+    def sha1(self) -> str:
+        hash = hashlib.sha1()
+        with self.path_object.open('rb') as curfile:
+            chunk = curfile.read()
+            if self.is_compr:
+                chunk_dec = zlib.decompress(chunk)
+                hash.update(chunk_dec)
+            else:
+                hash.update(chunk)
+        return hash.hexdigest()
+    
+    @classmethod
+    def sha1_from_text(cls, text : str) -> str:
+        hash = hashlib.sha1()
+        hash.update(text.encode('utf-8'))
+        return hash.hexdigest()
 
 class File_entry:
     name : str
@@ -98,13 +127,43 @@ class Index(Pit_file):
             else: r=mid
         return l
     
-    def add_single_file(self, position : int, new_entry : File_entry):
+    def add_single_file_by_position(self, position : int, new_entry : File_entry):
         self.number_of_files += 1
         self.files = self.files[:position] + [new_entry] + self.files[position:]
 
     def add_file_list_by_position(self, begin : int, end : int, new_entries : List[File_entry]):
         self.files = self.files[:begin] + new_entries + self.files[end:]
         self.number_of_files = len(self.files)
+
+    def add_file_list_general(self, do_change : List[ List[ str ] ]):
+        do_change.sort(key=lambda x:x[0])
+        lst_ch = 0
+        new_index_files : List[File_entry] = []
+        for change in do_change:
+            fdd = self.find_file_in_index(change[0])
+            if self.files[fdd].name==change[0]:
+                #we have a change in the file
+                for cur_entry_old in self.files[lst_ch:fdd]:
+                    new_index_files.append(cur_entry_old)
+                lst_ch = fdd+1
+                if change[1]!='...':
+                    #we don't have a deletion, so we have to add the file as existing
+                    new_index_files.append(File_entry(name=change[0],hash=change[1],has_bools=True,exists=True,changed=True))
+                else:
+                    #we have to add it as deleted
+                    new_index_files.append(File_entry(name=change[0],hash=change[1],has_bools=True,exists=False,changed=True))
+            else:
+                #we have a new file
+                for cur_entry_old in self.files[lst_ch:fdd+1]:
+                    new_index_files.append(cur_entry_old)
+                lst_ch = fdd+1
+                if change[1]=='...':
+                    print('THIS IS A BIG ERROR, IT SHOULD NEVER HAPPEN')
+                new_index_files.append(File_entry(name=change[0],hash=change[1],has_bools=True,exists=True,changed=True))
+        for cur_entry_old in self.files[lst_ch:]:
+            new_index_files.append(cur_entry_old)
+        self.number_of_files = len(new_index_files)
+        self.files = new_index_files
 
     def write_to_file(self, sort_files : bool = False , sort_trees : bool = False):
         if sort_files:
@@ -128,3 +187,50 @@ class Index(Pit_file):
             index_text += tree.turn_to_text(delimitor=' ')+'\n'
         return index_text
     
+class Tree(Pit_file):
+    hash : str
+    father : str
+    name : str
+    num_files : int
+    num_trees : int
+    files : List[File_entry]
+    trees : List[File_entry]
+
+    def __init__(self, object_file : Path):
+        super().__init__(file_object=object_file, is_compr=True)
+        self.hash = ''
+        self.father = ""
+        self.name = ""
+        self.num_files = 0
+        self.files = []
+        self.num_trees = 0
+        self.trees = [] 
+    
+    @classmethod
+    def from_file(cls, object_file : Path):
+        tree = cls(object_file)
+        tree_text = tree.get_value_text()
+        tree_info = tree_text.split('\x1e')
+        tree.name = tree_info[0]
+        tree.hash = tree.sha1()
+        tree.num_files = int(tree_info[1])
+        for line in tree_info[2:2+tree.num_files]:
+            spl = line.split('\x1d')
+            tree.files.append(File_entry(name=spl[0],hash=spl[1]))
+        tree.num_trees = int(tree_info[2+tree.num_files])
+        for line in tree_info[3+tree.num_files:3+tree.num_files+tree.num_trees]:
+            spl = line.split('\x1d')
+            tree.trees.append(File_entry(name=spl[0],hash=spl[1]))
+        return tree
+
+    def write_to_file(self, fix = False):
+        tree_text = self.name+'\x1e'+str(self.num_files)+'\x1e'
+        for cur_file in self.files:
+            tree_text += cur_file.turn_to_text()+'\x1e'
+        tree_text += str(self.num_trees)+'\x1e'
+        for cur_tree in self.trees:
+            tree_text += cur_tree.turn_to_text()+'\x1e'
+        if fix:
+            self.hash = Pit_file.sha1_from_text(tree_text)
+            self.path_object = (self.path_object.parent) / self.hash
+        self.write_value_from_text(tree_text)
