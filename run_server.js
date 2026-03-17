@@ -58,6 +58,7 @@ console.log(`Using localhost:${number} as server.(Press Ctr-C to close)`)
 
 http
   .createServer(async (request, response) => {
+    console.log('Received ' + request.method + ' request on: ' + request.url)
     if (request.method === 'GET' && request.url === '/clone')
     {
         response.writeHead(200, {

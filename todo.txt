@@ -17,7 +17,10 @@ DONE
 -potentially pit merge <branch1> <branch2> 
 -pit clone_heads
 -add calling js as a subprocess in the c++ code
-CURRENT
 -rewriting path_logic so the code can be read by a human being
+CURRENT
+
 TODO
--pit checkout <commit>: reverts repository to a previous commit
+-make merge into actual merge, by fixing father logic in Commit object
+-create empty commit into something so, that it doesnt bug logic
+-

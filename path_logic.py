@@ -6,6 +6,7 @@ from logic_classes import (
     Index,
     File_entry,
     Tree,
+    Commit,
 )
 from typing import List
 
@@ -49,28 +50,6 @@ def init(project_dir : Path):
     compresed_info = zlib.compress(b'0\x1e0\x1e')
     index_file.write_bytes(compresed_info)
     return True
-
-def find_index_old(index,num_blobs,file_name):
-    #performs binary search and returns index of first filename in index that is smaller or equal to file_name
-    l=0
-    r=num_blobs+1
-    while l<r-1:
-        mid=int((l+r)/2)
-        splited = index[mid].split('\x1d')
-        name = splited[0]
-        if name<=file_name: l=mid
-        else: r=mid
-    return l
-
-def decompress_index(index_file):
-    #takes index_file which is Path object of the index, and returns the array of lines
-    with index_file.open('rb') as index_opened:
-        index_compressed = index_opened.read()    
-    index_content = zlib.decompress(index_compressed)
-    index_text = index_content.decode('utf-8')
-    index = index_text.split('\x1e')
-    index.pop()
-    return index
 
 def add_file(root_dir : Path, file : Path):
     if file.resolve().is_relative_to(root_dir.resolve()): return
@@ -132,21 +111,6 @@ def get_folder(file_name : str) -> str:
     par_name=''
     for i in range(0,slash): par_name+=file_name[i]
     return par_name
-
-def sha1_text_old(text : str) -> str:
-    #returns sha1 encryption of text
-    hash = hashlib.sha1()
-    hash.update(text.encode('utf-8'))
-    return hash.hexdigest()
-
-def create_filecompr_from_text_old(root_dir : Path,tree_info : str) -> str:
-    hash = sha1_text_old(tree_info)
-    blob = root_dir / 'objects' / hash
-    if blob.exists():
-        return hash
-    compressed_data=zlib.compress(tree_info.encode('utf-8'))
-    blob.write_bytes(compressed_data)
-    return hash
 
 def commit(root_dir : Path, commit_message : str):
     #commits the changes in index
@@ -214,43 +178,38 @@ def commit(root_dir : Path, commit_message : str):
     cur_branch = head_file.get_value_text()
     branch_head = Pit_file(root_dir / 'refs' / 'heads' / cur_branch,is_compr=False)
     previous_commit = branch_head.get_value_text()
-    commit_info = commit_message+'\x1e'+previous_commit+'\x1e'+root_tree+'\x1e'
-    commit_info+=str(len(changed))+'\x1e'
+    changed_file_entry : List[File_entry] = []
     for ch in changed:
-        commit_info+=ch[0]+'\x1d'+str(ch[1])+'\x1e'
-    commit_hash = create_filecompr_from_text_old(root_dir=root_dir,tree_info=commit_info)
-    branch_head.write_value_from_text(commit_hash)
+        changed_file_entry.append(File_entry(name=ch[0],only_exists=True,exists=ch[1]))
+    new_commit = Commit(object_file=(root_dir / 'objects' / '...'),
+                        message=commit_message,
+                        head_tree=root_tree,
+                        num_changes=len(changed),
+                        changes=changed_file_entry,
+                        father=previous_commit)
+    new_commit.write_to_file(fix=True)
+    branch_head.write_value_from_text(new_commit.hash)
 
 def log(root_dir : Path) -> str:
     #returns information for all previous commits in current branch
-    head_file = root_dir / 'HEAD'
-    with head_file.open('rb') as head_opened:
-        cur_branch = head_opened.read()
-    cur_branch = cur_branch.decode('utf-8')
-    branch_head = root_dir / 'refs' / 'heads' / cur_branch
-    with branch_head.open('rb') as branch_head_opened:
-        last_commit = branch_head_opened.read()
-    last_commit = last_commit.decode('utf-8')
+    head_file = Pit_file(file_object=(root_dir / 'HEAD'))
+    cur_branch = head_file.get_value_text()
+    branch_head = Pit_file(root_dir / 'refs' / 'heads' / cur_branch)
+    last_commit = branch_head.get_value_text()
     log_text = ''
     while last_commit!='-':
-        commit_file = root_dir / 'objects' / last_commit
-        with commit_file.open('rb') as commit_file_opened:
-            commit_compressed = commit_file_opened.read()
-        commit_text = zlib.decompress(commit_compressed).decode('utf-8')
-        commit_info = commit_text.split('\x1e')
-        commit_info.pop()
+        cur_commit = Commit.from_file(object_file=(root_dir / 'objects' / last_commit))
         log_text+='Commit name:'+last_commit+'\n'
-        log_text+='Commit message:'+commit_info[0]+'\n'
+        log_text+='Commit message:'+cur_commit.message+'\n'
         changed = 0
         removed = 0
-        for i in range(4,len(commit_info)):
-            spl = commit_info[i].split('\x1d')
-            if spl[1]=='True': changed+=1
+        for cur_entry in cur_commit.changes:
+            if cur_entry.exists: changed+=1
             else: removed+=1
         log_text+='Changed '+str(changed)+' files.\n'
         log_text+='Removed '+str(removed)+' files.\n'
         log_text+='\n\n'
-        last_commit=commit_info[1]
+        last_commit=cur_commit.get_father()
     return log_text
 
 class UnableToRetrieve(Exception):
@@ -298,18 +257,10 @@ def retrieve(root_dir : Path, commit_name : str, file_name : str, create : bool,
     while last_commit!=commit_name:
         if last_commit=='-':
             raise UnableToRetrieve('There is no commit called '+commit_name+' in '+cur_branch+' branch.\n')
-        commit_file = root_dir / 'objects' / last_commit
-        with commit_file.open('rb') as commit_file_opened:
-            commit_compressed = commit_file_opened.read()
-        commit_text = zlib.decompress(commit_compressed).decode('utf-8')
-        commit_info = commit_text.split('\x1e')
-        last_commit = commit_info[1]
-    commit_file = root_dir / 'objects' / last_commit
-    with commit_file.open('rb') as commit_file_opened:
-        commit_compressed = commit_file_opened.read()
-    commit_text = zlib.decompress(commit_compressed).decode('utf-8')
-    commit_info = commit_text.split('\x1e')
-    cur_tree = commit_info[2]
+        cur_commit = Commit.from_file(object_file=(root_dir / 'objects' / last_commit))
+        last_commit = cur_commit.get_father()
+    last_commit_file = Commit.from_file(object_file=(root_dir / 'objects' / last_commit))
+    cur_tree = last_commit_file.head_tree
     file_content = find_file(root_dir,cur_tree,file_name)
     if file_content == False:
         raise UnableToRetrieve('There is no file '+file_name+' in the repository of commit '+commit_name+'.\n')
@@ -339,85 +290,63 @@ class IndexChanges():
 
 def complete_add_tree(root_dir : Path, new_tree : str) -> List[IndexChanges]:
     #iterates through the entire tree and adds IndexChanges for creation for every file
-    with (root_dir / 'objects' / new_tree).open('rb') as new_opened:
-        info = ( ( zlib.decompress( new_opened.read() ) ).decode('utf-8') ).split('\x1e')
-    changes = [IndexChanges(True,True,info[0],new_tree,1,'')]
-    num_files = int(info[1])
-    for i in range(2,2+num_files):
-        spl = info[i].split('\x1d')
-        changes.append(IndexChanges(True,True,spl[0],spl[1],0,''))
-    num_folders = int(info[2+num_files])
-    for i in range(3+num_files,3+num_files+num_folders):
-        spl = info[i].split('\x1d')
-        new_changes = complete_add_tree(root_dir,spl[1])
-        for change in new_changes: changes.append(change)
+    tree_struct = Tree.from_file(object_file=(root_dir / 'objects' / new_tree))
+    changes = [IndexChanges(True, True, tree_struct.name, new_tree, 1, '')]
+    for cur_entry in tree_struct.files:
+        changes.append(IndexChanges(True, True, cur_entry.name, cur_entry.hash, 0, ''))
+    for cur_entry in tree_struct.trees:
+        changes.extend(complete_add_tree(root_dir, cur_entry.hash))
     return changes
 
 def complete_delete_tree(root_dir : Path , old_tree : str) -> List[IndexChanges]:
     #iterates through the entire tree and adds IndexChanges for deletion for every file
-    with (root_dir / 'objects' / old_tree).open('rb') as old_opened:
-        info = ( ( zlib.decompress( old_opened.read() ) ).decode('utf-8') ).split('\x1e')   
-    changes = [IndexChanges(False,False,info[0],old_tree,1,'')]
-    num_files = int(info[1])
-    for i in range(2,2+num_files):
-        spl = info[i].split('\x1d')
-        changes.append(IndexChanges(False,False,spl[0],spl[1],0,spl[1]))
-    num_folders = int(info[2+num_files])
-    for i in range(3+num_files,3+num_files+num_folders):
-        spl = info[i].split('\x1d')
-        new_changes = complete_delete_tree(root_dir,spl[1])
-        for change in new_changes: changes.append(change)
+    tree_struct = Tree.from_file(object_file=(root_dir / 'objects' / old_tree))
+    changes = [IndexChanges(False, False, tree_struct.name, old_tree, 1, '')]
+    for cur_entry in tree_struct.files:
+        changes.append(IndexChanges(False, False, cur_entry.name, cur_entry.hash, 0, cur_entry.hash))
+    for cur_entry in tree_struct.trees:
+        changes.extend(complete_delete_tree(root_dir, cur_entry.hash))
     return changes
 
 def fix_tree(root_dir : Path, new_tree : str, old_tree : str) -> List[IndexChanges]:
     #returns the changes needed to sync new_tree and old_tree
-    with (root_dir / 'objects' / new_tree).open('rb') as new_opened:
-        new_info = ( ( zlib.decompress( new_opened.read() ) ).decode('utf-8') ).split('\x1e')
-    with (root_dir / 'objects' / old_tree).open('rb') as old_opened:
-        old_info = ( ( zlib.decompress( old_opened.read() ) ).decode('utf-8') ).split('\x1e')   
+    new_tree_struct = Tree.from_file(object_file=(root_dir / 'objects' / new_tree)) 
+    old_tree_struct = Tree.from_file(object_file=(root_dir / 'objects' / old_tree)) 
     file_dic = {}
     folder_dic = {}
-    changes = [IndexChanges(True,False,new_info[0],new_tree,1,'')]
-    old_files = int(old_info[1])
-    new_files = int(new_info[1])
-    for i in range(2,2+old_files):
-        spl = old_info[i].split('\x1d')
-        file_dic[spl[0]]=spl[1]
-    for i in range(2,2+new_files):
-        spl = new_info[i].split('\x1d')
-        if spl[0] in file_dic:
+    changes = [IndexChanges(True,False,new_tree_struct.name,new_tree,1,'')]
+    for cur_entry in old_tree_struct.files:
+        file_dic[cur_entry.name]=cur_entry.hash
+    for cur_entry in new_tree_struct.files:
+        if cur_entry.name in file_dic:
             #its in the dictionary
-            if spl[1]!=file_dic[spl[0]]:
+            if cur_entry.hash!=file_dic[cur_entry.name]:
                 #its changed
-                changes.append(IndexChanges(True,False,spl[0],spl[1],0,file_dic[spl[0]]))
-            file_dic.pop(spl[0])
+                changes.append(IndexChanges(True,False,cur_entry.name,cur_entry.hash,0,file_dic[ cur_entry.name ]))
+            file_dic.pop(cur_entry.name)
         else:
             #its not so its new
-            changes.append(IndexChanges(True,True,spl[0],spl[1],0,''))
+            changes.append(IndexChanges(True,True,cur_entry.name,cur_entry.hash,0,''))
     for left in file_dic:
         #all of these were in old but not in new
         changes.append(IndexChanges(False,False,left,file_dic[left],0,file_dic[left]))
-    old_folders = int(old_info[2+old_files])
-    new_folders = int(new_info[2+new_files])
-    for i in range(3+old_files,3+old_files+old_folders):
-        spl = old_info[i].split('\x1d')
-        folder_dic[spl[0]]=spl[1]
-    for i in range(3+new_files,3+new_files+new_folders):
-        spl = new_info[i].split('\x1d')
-        if spl[0] in folder_dic:
+    for cur_entry in old_tree_struct.trees:
+        folder_dic[cur_entry.name]=cur_entry.hash
+    for cur_entry in new_tree_struct.trees:
+        if cur_entry.name in folder_dic:
             #its in the dic
-            if spl[1]!=folder_dic[spl[0]]:
+            if cur_entry.hash!=folder_dic[cur_entry.name]:
                 #there are changes in the folder
-                new_changes = fix_tree(root_dir,spl[1],folder_dic[spl[0]])
+                new_changes = fix_tree(root_dir,cur_entry.hash,folder_dic[cur_entry.name])
                 for change in new_changes: changes.append(change)
-            folder_dic.pop(spl[0])
+            folder_dic.pop(cur_entry.name)
         else:
-            new_changes = complete_add_tree(root_dir,spl[1])
+            new_changes = complete_add_tree(root_dir,cur_entry.hash)
             for change in new_changes: changes.append(change)
     for left in folder_dic:
         #all of those folders dont exist anymore
         new_changes = complete_delete_tree(root_dir,folder_dic[left])
-        for change in new_changes: changes.append(change)
+        changes.extend(new_changes)
     return changes
 
 def checkout(root_dir : Path, branch_name : str) -> bool:
@@ -448,13 +377,11 @@ def checkout(root_dir : Path, branch_name : str) -> bool:
     #branch exists so we need to actually perform changes
     changes = []
     last_commit = last_commit.decode('utf-8')
-    commit_file = root_dir / 'objects' / last_commit
-    with commit_file.open('rb') as commit_opened:
-        commit_compr = commit_opened.read()
-    commit_decomp = zlib.decompress(commit_compr)
-    commit_text = commit_decomp.decode('utf-8')
-    commit_info = commit_text.split('\x1e')
-    new_tree = commit_info[2]
+    if last_commit!='-':
+        commit_obj = Commit.from_file(root_dir / 'objects' / last_commit)
+        new_tree = commit_obj.head_tree
+    else:
+        new_tree = '-'
     old_tree = index.trees[0].hash
     if old_tree==new_tree:
         #there arent any changes between the two branches, so we can just change
@@ -643,26 +570,17 @@ class NonExistentTree(Exception):
         super().__init__(message)
 
 def print_tree(root_dir : Path, tree_name : str):
-    tree_obj = (root_dir / 'objects' / tree_name)
-    with (tree_obj.open('rb')) as tree_opened:
-        tree_compr = tree_opened.read()
-    tree_bytes = zlib.decompress(tree_compr)
-    tree_text = tree_bytes.decode('utf-8')
-    tree_info = tree_text.split('\x1e')
+    tree_struct = Tree.from_file(object_file=(root_dir / 'objects' / tree_name))
     answer = []
-    if tree_info[0]!='.': 
-        answer.append(tree_info[0]+":")
-    num_files = int(tree_info[1])
-    for line in tree_info[2:2+num_files]:
-        spl = line.split('\x1d')
-        if tree_info[0]!='.': answer.append(' '+spl[0])
-        else: answer.append(spl[0])
-    num_folders = int(tree_info[2+num_files])
-    for line in tree_info[3+num_files:3+num_files+num_folders]:
-        spl = line.split('\x1d')
-        cur_ans = print_tree(root_dir,spl[1])
+    if tree_struct.name != '.':
+        answer.append(tree_struct.name + ":")
+    for cur_file in tree_struct.files:
+        if tree_struct.name != '.': answer.append(' ' + cur_file.name)
+        else: answer.append(cur_file.name)
+    for cur_tree in tree_struct.trees:
+        cur_ans = print_tree(root_dir, cur_tree.hash)
         for new_line in cur_ans:
-            if tree_info[0]!='.': answer.append(' '+new_line)
+            if tree_struct.name != '.': answer.append(' ' + new_line)
             else: answer.append(new_line)
     return answer
 
@@ -677,17 +595,11 @@ def ls_tree(root_dir : Path, commit_name : str):
         last_commit = branch_head_opened.read()
     last_commit = last_commit.decode('utf-8')
     if commit_name=='last': commit_name=last_commit
-    commit_obj = root_dir / 'objects' / commit_name
-    if not commit_obj.exists():
+    commit_file = root_dir / 'objects' / commit_name
+    if not commit_file.exists():
         raise NonExistentTree("The commit does not exist")
-    with (commit_obj.open('rb')) as commit_opened:
-        commit_compr = commit_opened.read()
-    commit_bytes = zlib.decompress(commit_compr)
-    commit_text = commit_bytes.decode('utf-8')
-    commit_info = commit_text.split('\x1e')
-    if len(commit_info)<4:
-        raise NonExistentTree("The commit does not exist")
-    result = print_tree(root_dir,commit_info[2])
+    commit_object = Commit.from_file(commit_file)
+    result = print_tree(root_dir,commit_object.head_tree)
     text_result = ''
     for line in result:
         text_result+=line
@@ -695,13 +607,10 @@ def ls_tree(root_dir : Path, commit_name : str):
     return text_result
 
 def branch_list(root_dir : Path):
-    head_file = root_dir / 'HEAD'
-    with head_file.open('rb') as head_opened:
-        cur_branch = head_opened.read()
-    cur_branch = cur_branch.decode('utf-8')
+    head_file = Pit_file(root_dir / 'HEAD')
+    cur_branch = head_file.get_value_text()
     print_text = ""
     refs_heads = root_dir / 'refs' / 'heads'
-    last_commit = '-1'
     for file in refs_heads.iterdir():
         if file.name == cur_branch:
             print_text+='\033[32m'+file.name+'\033[0m *\n'
@@ -713,39 +622,29 @@ class NonExistentBranch(Exception):
         self.message = msg
         super().__init__(self.message)
 
-def get_file_decompr(file : Path):
-    with file.open('rb') as opened:
-        compressed = opened.read()
-    decompressed = zlib.decompress(compressed)
-    raw_text = decompressed.decode('utf-8')
-    answer = raw_text.split('\x1e')
-    return answer
-
 def find_common_ancestor(object_folder : Path, commit1 : str, commit2 : str):
     dict = {
         commit1 : 1
     }
     commit1_file = object_folder / commit1
-    commit1_info = get_file_decompr(commit1_file)
-    father = commit1_info[1]
+    commit1_obj = Commit.from_file(commit1_file)
+    father = commit1_obj.get_father()
     while True:
         dict[father]=1
         if father == '-': break
         father_file = object_folder / father
-        with father_file.open('rb') as opened1:
-            father_info = (zlib.decompress(opened1.read()).decode('utf-8')).split('\x1e')
-        father = father_info[1]
+        father_commit = Commit.from_file(father_file)
+        father = father_commit.get_father()
     if commit2 in dict:
         return commit2
     commit2_file = object_folder / commit2
-    commit2_info = get_file_decompr(commit2_file)
-    father = commit2_info[1]
+    commit2_obj = Commit.from_file(commit2_file)
+    father = commit2_obj.get_father()
     while True:
         if father in dict: return father
         father_file = object_folder / father
-        with father_file.open('rb') as opened3:
-            father_info = (zlib.decompress(opened3.read()).decode('utf-8')).split('\x1e')
-        father = father_info[1]
+        father_commit = Commit.from_file(father_file)
+        father = father_commit.get_father()
 
 def fast_forward_merge(root_dir : Path, branch_name : str, cur_branch_file, commit_them : str):
     try:
@@ -755,79 +654,57 @@ def fast_forward_merge(root_dir : Path, branch_name : str, cur_branch_file, comm
     cur_branch_file.write_text(commit_them)
 
 def find_all_changes(object_dir : Path, lca_tree : str, us_tree : str, them_tree : str):
-    if lca_tree!='...': lca_info = get_file_decompr(object_dir / lca_tree)
-    else: lca_info = ['none','0','0']
-    if us_tree!='...': us_info= get_file_decompr(object_dir / us_tree)
-    else: us_info = ['none','0','0']
-    if them_tree!='...': them_info = get_file_decompr(object_dir / them_tree)
-    else: them_info = ['none','0','0']
-    lca_files = {}
-    lca_folders = {}
-    lca_num_files = int(lca_info[1])
-    lca_num_folders = int(lca_info[2+lca_num_files])
-    for line in lca_info[2:2+lca_num_files]:
-        spl = line.split('\x1d')
-        lca_files[spl[0]]=spl[1]
-    for line in lca_info[3+lca_num_files:3+lca_num_files+lca_num_folders]:
-        spl = line.split('\x1d')
-        lca_folders[spl[0]]=spl[1]
-    us_files = {}
-    us_folders = {}
-    us_num_files = int(us_info[1])
-    us_num_folders = int(us_info[2+us_num_files])
-    for line in us_info[2:2+us_num_files]:
-        spl = line.split('\x1d')
-        us_files[spl[0]]=spl[1]
-    for line in us_info[3+us_num_files:3+us_num_files+us_num_folders]:
-        spl = line.split('\x1d')
-        us_folders[spl[0]]=spl[1]
+    def load_tree_maps(tree_hash: str):
+        if tree_hash == '...':
+            return {}, {}
+        tree = Tree.from_file(object_file=(object_dir / tree_hash))
+        files = {entry.name: entry.hash for entry in tree.files}
+        folders = {entry.name: entry.hash for entry in tree.trees}
+        return files, folders
+    lca_files, lca_folders = load_tree_maps(lca_tree)
+    us_files, us_folders = load_tree_maps(us_tree)
+    them_files, them_folders = load_tree_maps(them_tree)
     changes = []
-    them_num_files = int(them_info[1])
-    them_num_folders = int(them_info[2+them_num_files])
-    for line in them_info[2:2+them_num_files]:
-        spl = line.split('\x1d')
-        if spl[0] not in us_files:
-            if spl[0] in lca_files:
-                changes.append([spl[0],lca_files[spl[0]],'...',spl[1]])
+    for name, them_hash in them_files.items():
+        if name not in us_files:
+            if name in lca_files:
+                changes.append([name, lca_files[name], '...', them_hash])
             else:
-                changes.append([spl[0],'...','...',spl[1]])
+                changes.append([name, '...', '...', them_hash])
         else:
-            if spl[1] != us_files[spl[0]]:
-                if spl[0] in lca_files:
-                    changes.append([spl[0],lca_files[spl[0]],us_files[spl[0]],spl[1]])
+            if them_hash != us_files[name]:
+                if name in lca_files:
+                    changes.append([name, lca_files[name], us_files[name], them_hash])
                 else:
-                    changes.append([spl[0],'...',us_files[spl[0]],spl[1]])
-            us_files.pop(spl[0])
-    for key, value in us_files.items():
-        if key in lca_files:
-            changes.append([key,lca_files[key],value,'...'])
+                    changes.append([name, '...', us_files[name], them_hash])
+            us_files.pop(name)
+    for name, us_hash in us_files.items():
+        if name in lca_files:
+            changes.append([name, lca_files[name], us_hash, '...'])
         else:
-            changes.append([key,'...',value,'...'])
-    for line in them_info[3+them_num_files:3+them_num_files+them_num_folders]:
-        spl = line.split('\x1d')
-        if spl[0] not in us_folders:
-            if spl[0] in lca_folders:
-                new_changes = find_all_changes(object_dir,lca_folders[spl[0]],'...',spl[1])
+            changes.append([name, '...', us_hash, '...'])
+    for name, them_hash in them_folders.items():
+        if name not in us_folders:
+            if name in lca_folders:
+                new_changes = find_all_changes(object_dir, lca_folders[name], '...', them_hash)
             else:
-                new_changes = find_all_changes(object_dir,'...','...',spl[1])
+                new_changes = find_all_changes(object_dir, '...', '...', them_hash)
         else:
-            if spl[1] != us_folders[spl[0]]:
-                if spl[0] in lca_folders:
-                    new_changes = find_all_changes(object_dir,lca_folders[spl[0]],us_folders[spl[0]],spl[1])
+            if them_hash != us_folders[name]:
+                if name in lca_folders:
+                    new_changes = find_all_changes(object_dir, lca_folders[name], us_folders[name], them_hash)
                 else:
-                    new_changes = find_all_changes(object_dir,'...',us_folders[spl[0]],spl[1])
+                    new_changes = find_all_changes(object_dir, '...', us_folders[name], them_hash)
             else:
                 new_changes = []
-            us_folders.pop(spl[0])
-        for change in new_changes:
-            changes.append(change)
-    for key, value in us_folders.items():
-        if key in lca_folders:
-            new_changes = find_all_changes(object_dir,lca_folders[key],value,'...')
+            us_folders.pop(name)
+        changes.extend(new_changes)
+    for name, us_hash in us_folders.items():
+        if name in lca_folders:
+            new_changes = find_all_changes(object_dir, lca_folders[name], us_hash, '...')
         else:
-            new_changes = find_all_changes(object_dir,'...',value,'...')
-        for change in new_changes:
-            changes.append(change)
+            new_changes = find_all_changes(object_dir, '...', us_hash, '...')
+        changes.extend(new_changes)
     return changes
 
 class ConflictingChanges(Exception):
@@ -841,25 +718,20 @@ def merge(root_dir : Path, branch_name : str, ask_for_comm_name : bool = True):
     for cur_entry in index.files:
         if cur_entry.changed:
             raise UncommitedChanges('Please commit all changes before merging branches.')
-    head_file = root_dir / 'HEAD'
-    with head_file.open('rb') as head_opened:
-        cur_branch = head_opened.read()
-    cur_branch = cur_branch.decode('utf-8')
+    head_file = Pit_file(root_dir / 'HEAD')
+    cur_branch = head_file.get_value_text()
     if cur_branch==branch_name: return False
     refs_heads = root_dir / 'refs' / 'heads'
     last_commit_them = '-1'
     for file in refs_heads.iterdir():
         if file.name == branch_name:
-            with file.open('rb') as file_opened:
-                last_commit_them = file_opened.read()
-    cur_branch_file = refs_heads / cur_branch
-    with cur_branch_file.open('rb') as cur_opened:
-        last_commit_us = cur_opened.read()
+            them_file = Pit_file(file)
+            last_commit_them = them_file.get_value_text()
+    cur_branch_file = Pit_file(refs_heads / cur_branch)
+    last_commit_us = cur_branch_file.get_value_text()
     if last_commit_them=='-1':
         #branch does not exist
         raise NonExistentBranch('Branch '+branch_name+' does not exist.')
-    last_commit_us = last_commit_us.decode('utf-8')
-    last_commit_them = last_commit_them.decode('utf-8')
     object_folder = root_dir / 'objects'
     lca = find_common_ancestor(object_folder,last_commit_us,last_commit_them)
     if lca == last_commit_them:
@@ -873,15 +745,15 @@ def merge(root_dir : Path, branch_name : str, ask_for_comm_name : bool = True):
     #here we have to do a 3-way merge
     #first I want a list of all files that are different in us and them
     #then i have to retrieve what they are in the lca commit
-    commit1_file = root_dir / 'objects' / last_commit_us
-    commit_us_tree = (get_file_decompr(commit1_file))[2]
-    commit2_file = root_dir / 'objects' / last_commit_them
-    commit_them_tree = (get_file_decompr(commit2_file))[2]
-    commit3_file = root_dir / 'objects' / lca
-    lca_tree = (get_file_decompr(commit3_file))[2]
+    commit1_file = Commit.from_file(object_folder / last_commit_us)
+    commit_us_tree = commit1_file.head_tree
+    commit2_file = Commit.from_file(object_folder / last_commit_them)
+    commit_them_tree = commit2_file.head_tree
+    commit3_file = Commit.from_file(object_folder / lca)
+    lca_tree = commit3_file.head_tree
     if ask_for_comm_name: new_merge_commit = input('Feed forward merge cannot be performed. Enter commit message for 3-way-merge:\n')
     else: new_merge_commit = f'Merge commit for the temperary {cur_branch} with {branch_name}' 
-    all_changes = find_all_changes(object_dir=(root_dir / 'objects'),lca_tree=lca_tree,us_tree=commit_us_tree,them_tree=commit_them_tree)
+    all_changes = find_all_changes(object_dir=object_folder,lca_tree=lca_tree,us_tree=commit_us_tree,them_tree=commit_them_tree)
     project_dir_name = str(root_dir.parent)
     do_change = []
     for change in all_changes:
@@ -898,7 +770,6 @@ def merge(root_dir : Path, branch_name : str, ask_for_comm_name : bool = True):
                     raise ConflictingChanges('There are conflicting changes in the current branch, not added to index.')
             do_change.append([change[0],change[3]])
     index.add_file_list_general(do_change)
-    print(index.turn_to_text())
     index.write_to_file()
     for change in do_change:
         file_obj = Path(project_dir_name+'/'+change[0])
@@ -923,35 +794,28 @@ def merge(root_dir : Path, branch_name : str, ask_for_comm_name : bool = True):
     return 2
 
 def iterate_tree(root_dir : Path, main_tree : str):
-    if main_tree=='-':
+    if main_tree == '-':
         return []
-    tree_info = get_file_decompr(root_dir / 'objects' / main_tree)
-    ans = [ [tree_info[0],main_tree,False] ]
-    num_files = int(tree_info[1])
-    for line in tree_info[2:2+num_files]:
-        spl = line.split('\x1d')
-        ans.append([spl[0],spl[1],True])
-    num_folders = int(tree_info[2+num_files])
-    for line in tree_info[3+num_files:3+num_files+num_folders]:
-        spl = line.split('\x1d')
-        ans_child = iterate_tree(root_dir,spl[1])
-        for new_ans in ans_child:
-            ans.append(new_ans)
+    tree_struct = Tree.from_file(object_file=(root_dir / 'objects' / main_tree))
+    ans = [[tree_struct.name, main_tree, False]]
+    for cur_file in tree_struct.files:
+        ans.append([cur_file.name, cur_file.hash, True])
+    for cur_tree in tree_struct.trees:
+        ans.extend(iterate_tree(root_dir, cur_tree.hash))
     return ans
 
 def put_content_after_clone(root_dir : Path):
     project_dir = root_dir.parent
-    refs_heads = root_dir / 'refs' / 'heads' / 'Main'
-    with refs_heads.open('rb') as opened:
-        refs_heads_text = (opened.read()).decode('utf-8')
-    last_commit = root_dir / 'objects' / refs_heads_text
+    refs_heads = Pit_file(root_dir / 'refs' / 'heads' / 'Main')
+    refs_heads_text = refs_heads.get_value_text()
+    last_commit_file = root_dir / 'objects' / refs_heads_text
+    last_commit = Commit.from_file(last_commit_file)
     head_file = root_dir / 'HEAD'
     head_file.write_text('Main')
     contents = List[list]
     index = Index(root_dir)
     if refs_heads_text != '-':
-        commit_info = get_file_decompr(last_commit)
-        main_tree = commit_info[2]
+        main_tree = last_commit.head_tree
         contents = iterate_tree(root_dir, main_tree)
     for content in contents:
         if content[2]:
@@ -964,3 +828,4 @@ def put_content_after_clone(root_dir : Path):
     index.number_of_files = len(index.files)
     index.number_of_trees = len(index.trees)
     index.write_to_file(sort_files=True,sort_trees=True)
+    

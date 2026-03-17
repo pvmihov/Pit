@@ -63,34 +63,47 @@ class File_entry:
     has_bools : bool
     exists : bool
     changed : bool
+    only_exists : bool
 
-    def __init__(self, name : str, hash : str, has_bools : bool = False, exists : bool = False, changed : bool = False):
+    def __init__(self, name : str, hash : str = '...', has_bools : bool = False, exists : bool = False, changed : bool = False, only_exists : bool = False):
         self.name = name
         self.hash = hash
         self.has_bools = has_bools
         self.exists = exists
         self.changed = changed
+        self.only_exists = only_exists
     
     @classmethod
-    def from_line(cls, line_text : str, has_bools : bool = False):
+    def from_line(cls, line_text : str, has_bools : bool = False, only_exists : bool = False):
         line_spl = line_text.split('\x1d')
         name = line_spl[0]
-        hash = line_spl[1]
-        if has_bools:
-            if line_spl[2]=='True': exists = True
-            else: exists = False
-            if line_spl[3]=='True': changed = True
-            else: changed = False
-            return cls(name,hash,has_bools,exists,changed)
-        else: return cls(name,hash)
+        if only_exists:
+            if line_spl[1]=='True':
+                exists = True
+            else:
+                exists = False
+            return cls(name=name, only_exists=True,exists=exists)
+        else:
+            hash = line_spl[1]
+            if has_bools:
+                if line_spl[2]=='True': exists = True
+                else: exists = False
+                if line_spl[3]=='True': changed = True
+                else: changed = False
+                return cls(name,hash,has_bools,exists,changed)
+            else: return cls(name,hash)
     
     def turn_to_text(self, delimitor : str = '\x1d') -> str:
-        text = self.name+delimitor+self.hash
-        if self.has_bools:
-            ex_text = str(self.exists)
-            ch_text = str(self.changed)
-            text+=delimitor+ex_text+delimitor+ch_text
-        return text
+        if self.only_exists:
+            text = self.name+delimitor+str(self.exists)
+            return text
+        else:
+            text = self.name+delimitor+self.hash
+            if self.has_bools:
+                ex_text = str(self.exists)
+                ch_text = str(self.changed)
+                text+=delimitor+ex_text+delimitor+ch_text
+            return text
 
 class Index(Pit_file):
     number_of_files : int
@@ -209,6 +222,7 @@ class Tree(Pit_file):
     @classmethod
     def from_file(cls, object_file : Path):
         tree = cls(object_file)
+        if object_file.name == '-': return tree
         tree_text = tree.get_value_text()
         tree_info = tree_text.split('\x1e')
         tree.name = tree_info[0]
@@ -234,3 +248,56 @@ class Tree(Pit_file):
             self.hash = Pit_file.sha1_from_text(tree_text)
             self.path_object = (self.path_object.parent) / self.hash
         self.write_value_from_text(tree_text)
+
+class Commit(Pit_file):
+    message : str
+    head_tree : str
+    num_changes : int
+    changes : List[File_entry]
+    hash : str
+    father : str
+
+    def __init__(self, object_file : Path , message : str = '', head_tree : str = '', num_changes : int = 0, changes : List[File_entry] = None, father : str = ''):
+        super().__init__(file_object= object_file, is_compr=True)
+        self.hash = ''
+        self.message = message
+        self.head_tree = head_tree
+        self.num_changes = num_changes
+        if changes is None:
+            self.changes = []
+        else:
+            self.changes = changes
+        self.father = father
+
+    @classmethod
+    def from_file(cls, object_file : Path):
+        commit = cls(object_file = object_file)
+        commit.hash = commit.sha1()
+        commit_text = commit.get_value_text()
+        commit_info = commit_text.split('\x1e')
+        commit.message = commit_info[0]
+        commit.father = commit_info[1]
+        commit.head_tree = commit_info[2]
+        commit.num_changes = int(commit_info[3])
+        kolko = 0
+        for line in commit_info[4:-1]:
+            spl = line.split('\x1d')
+            if spl[1]=='True':
+                exists = True
+            else: exists = False
+            kolko+=1
+            commit.changes.append(File_entry(name=spl[0],only_exists=True,exists=exists))
+        return commit
+    
+    def get_father(self) -> str:
+        return self.father
+    
+    def write_to_file(self, fix = False):
+        commit_text = self.message + '\x1e' + self.father + '\x1e' + self.head_tree + '\x1e' + str(self.num_changes) + '\x1e'
+        for change in self.changes:
+            commit_text += change.turn_to_text()+'\x1e'
+        if fix:
+            self.hash = Pit_file.sha1_from_text(commit_text)
+            self.path_object = (self.path_object.parent) / self.hash
+        self.write_value_from_text(commit_text)
+
