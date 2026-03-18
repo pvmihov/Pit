@@ -256,8 +256,10 @@ class Commit(Pit_file):
     changes : List[File_entry]
     hash : str
     father : str
+    brother : str
 
-    def __init__(self, object_file : Path , message : str = '', head_tree : str = '', num_changes : int = 0, changes : List[File_entry] = None, father : str = ''):
+    def __init__(self, object_file : Path , message : str = '', head_tree : str = '', num_changes : int = 0, changes : List[File_entry] = None,
+                 father : str = '', brother : str = None):
         super().__init__(file_object= object_file, is_compr=True)
         self.hash = ''
         self.message = message
@@ -268,6 +270,7 @@ class Commit(Pit_file):
         else:
             self.changes = changes
         self.father = father
+        self.brother = brother
 
     @classmethod
     def from_file(cls, object_file : Path):
@@ -280,22 +283,30 @@ class Commit(Pit_file):
         commit.head_tree = commit_info[2]
         commit.num_changes = int(commit_info[3])
         kolko = 0
-        for line in commit_info[4:-1]:
+        for line in commit_info[4:4+commit.num_changes]:
             spl = line.split('\x1d')
             if spl[1]=='True':
                 exists = True
             else: exists = False
             kolko+=1
             commit.changes.append(File_entry(name=spl[0],only_exists=True,exists=exists))
+        if commit_info[4+commit.num_changes]!='':
+            #there is a brother
+            commit.brother = commit_info[-2]
         return commit
     
     def get_father(self) -> str:
         return self.father
     
+    def get_brother(self) -> str | None:
+        return self.brother
+    
     def write_to_file(self, fix = False):
         commit_text = self.message + '\x1e' + self.father + '\x1e' + self.head_tree + '\x1e' + str(self.num_changes) + '\x1e'
         for change in self.changes:
             commit_text += change.turn_to_text()+'\x1e'
+        if self.brother is not None:
+            commit_text += self.brother + '\x1e'
         if fix:
             self.hash = Pit_file.sha1_from_text(commit_text)
             self.path_object = (self.path_object.parent) / self.hash

@@ -200,7 +200,7 @@ def _merge(folder_path, branch_name):
     if root_folder==None:
         return str(cur_folder)+' is not part of a repository.'
     try:
-        if path_logic.merge(root_dir=(root_folder / '.pit'),branch_name=branch_name)>0:
+        if path_logic.merge(root_dir=(root_folder / '.pit'),branch_name=branch_name,create_brother=True)>0:
             return "Completed merge with "+branch_name
         else:
             return "Already up to date"

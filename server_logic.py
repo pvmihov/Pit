@@ -1,4 +1,5 @@
 from pathlib import Path
+from logic_classes import Pit_file
 import path_logic
 import urllib.request
 import urllib.error
@@ -69,6 +70,8 @@ def pull(project_dir, host_num):
                 print('Connection succeeded. Begging pulling')
                 branch_head = response.read()
                 branch_head = branch_head.decode('utf-8')
+                if branch_head == '-':
+                    return f'branch {cur_branch} is ahead or concurrent with {host_num}'  
             elif response.status == 204:
                 return f'{cur_branch} does not exist on localhost:{host_num}'
             else:
@@ -80,7 +83,7 @@ def pull(project_dir, host_num):
     temp_head_file = None
     while True:
         temp_name = ''
-        for i in range(0,6):
+        for i in range(0,30):
             temp_name+=random.choice(string.ascii_letters)
         temp_head_file = project_dir / '.pit' / 'refs' / 'heads' / temp_name
         if not temp_head_file.exists():
@@ -138,7 +141,7 @@ def push(root_dir, host_num):
         raise ServerError('Server failed to handle request.')  
     except urllib.error.URLError:
         raise ServerError('Failed to connect to server.')
-    if branch_head != '-1':
+    if branch_head != '-1' and branch_head != '-':
         new_branch_file = root_dir / 'objects' / branch_head
         if not new_branch_file.exists():
             return f'branch {cur_branch} is behind localhost:{host_num}'
@@ -151,16 +154,25 @@ def push(root_dir, host_num):
     zip_buffer = io.BytesIO()
     objects_dir = root_dir / 'objects'
     zip_buffer = io.BytesIO()
+    altered_anything = False
     with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zip_opened:
         for file_path in objects_dir.iterdir():
             if file_path.is_file():
-                # todo later, check that the file was not altered
-                # hash = path_logic.sha1_file(file=file_path)
-                # if hash != file_path.name: 
-                #     print(f'File {file_path.name} was altered, so will not be pushed to server')
-                #     continue #the file was altered and not created correctly
+                try:
+                    pit_file = Pit_file(file_path,True)
+                    hash = pit_file.sha1()
+                except Exception:
+                    print(f'File {file_path.name} was altered')
+                    altered_anything = True  
+                    continue                
+                if hash != file_path.name: 
+                    print(f'File {file_path.name} was altered')
+                    altered_anything = True
+                    continue #the file was altered and not created correctly
                 archive_path = f"objects/{file_path.name}"
                 zip_opened.write(file_path, archive_path)
+    if altered_anything:
+        return 'There are altered files in objects folder, so push will not be performed.'
     zip_raw_bytes = zip_buffer.getvalue()
     request = urllib.request.Request(url=f'http://localhost:{host_num}/push',data=zip_raw_bytes,headers={'content-type':'application/zip', 'X-Current-Branch': cur_branch, 'X-New-Last-Commit': cur_commit},method='POST')
     try:

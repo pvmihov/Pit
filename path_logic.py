@@ -44,11 +44,15 @@ def init(project_dir : Path):
     refs_heads_folder.mkdir()
     HEAD_file = dot_pit_folder / 'HEAD'
     HEAD_file.write_text('Main')
+    Main_tree = Tree(objects_folder / '...')
+    Main_tree.name = '.'
+    Main_tree.write_to_file(fix=True)
+    First_commit = Commit(object_file=(objects_folder / '...'),message='Created repository!',head_tree=Main_tree.hash,father='-')
+    First_commit.write_to_file(fix=True)
     Main_commit = refs_heads_folder / 'Main'
-    Main_commit.write_text('-')
-    index_file = dot_pit_folder / 'index'
-    compresed_info = zlib.compress(b'0\x1e0\x1e')
-    index_file.write_bytes(compresed_info)
+    Main_commit.write_text(First_commit.hash)
+    index_file = Index(dot_pit_folder)
+    index_file.write_to_file()
     return True
 
 def add_file(root_dir : Path, file : Path):
@@ -81,13 +85,13 @@ def add_file(root_dir : Path, file : Path):
             index.add_single_file_by_position(creation,new_entry)
         else:
             #this means file is in the index at line, position
-            cur_file_entry = index.files[creation]
+            cur_file_entry = index.files[position]
             if cur_file_entry.hash==hash:
                 #means nothing was changed, so we shouldnt change nothing
                 return
             #here the file was actually changed
-            index.files[creation].hash = hash
-            index.files[creation].changed = True
+            index.files[position].hash = hash
+            index.files[position].changed = True
         index.write_to_file()    
     else:
         #means file was deleted
@@ -112,7 +116,7 @@ def get_folder(file_name : str) -> str:
     for i in range(0,slash): par_name+=file_name[i]
     return par_name
 
-def commit(root_dir : Path, commit_message : str):
+def commit(root_dir : Path, commit_message : str) -> str:
     #commits the changes in index
     index = Index.from_file(root_dir)
     num_trees = 1
@@ -189,6 +193,7 @@ def commit(root_dir : Path, commit_message : str):
                         father=previous_commit)
     new_commit.write_to_file(fix=True)
     branch_head.write_value_from_text(new_commit.hash)
+    return new_commit.hash
 
 def log(root_dir : Path) -> str:
     #returns information for all previous commits in current branch
@@ -385,10 +390,6 @@ def checkout(root_dir : Path, branch_name : str) -> bool:
     old_tree = index.trees[0].hash
     if old_tree==new_tree:
         #there arent any changes between the two branches, so we can just change
-        cur_branch_file = Pit_file(refs_heads / cur_branch)
-        cur_commit = cur_branch_file.get_value_text()
-        new_branch = Pit_file(refs_heads / branch_name)
-        new_branch.write_value_from_text(cur_commit)
         head_file.write_value_from_text(branch_name)
         return True
     changes = fix_tree(root_dir,new_tree,old_tree)
@@ -634,6 +635,8 @@ def find_common_ancestor(object_folder : Path, commit1 : str, commit2 : str):
         if father == '-': break
         father_file = object_folder / father
         father_commit = Commit.from_file(father_file)
+        if father_commit.brother is not None: dict[father_commit.brother] = 1
+        #print(father_commit.brother)
         father = father_commit.get_father()
     if commit2 in dict:
         return commit2
@@ -644,14 +647,15 @@ def find_common_ancestor(object_folder : Path, commit1 : str, commit2 : str):
         if father in dict: return father
         father_file = object_folder / father
         father_commit = Commit.from_file(father_file)
+        if (father_commit.brother is not None) and father_commit.brother in dict: return father
         father = father_commit.get_father()
 
-def fast_forward_merge(root_dir : Path, branch_name : str, cur_branch_file, commit_them : str):
+def fast_forward_merge(root_dir : Path, branch_name : str, cur_branch_file : Pit_file, commit_them : str):
     try:
         checkout(root_dir,branch_name)
     except UncommitedChanges as error:
         raise error
-    cur_branch_file.write_text(commit_them)
+    cur_branch_file.write_value_from_text(commit_them)
 
 def find_all_changes(object_dir : Path, lca_tree : str, us_tree : str, them_tree : str):
     def load_tree_maps(tree_hash: str):
@@ -712,7 +716,7 @@ class ConflictingChanges(Exception):
         self.message = msg
         super().__init__(self.message)
 
-def merge(root_dir : Path, branch_name : str, ask_for_comm_name : bool = True):
+def merge(root_dir : Path, branch_name : str, ask_for_comm_name : bool = True, create_brother : bool = False):
     #merges branch with branch_name to the current branch
     index = Index.from_file(root_dir)
     for cur_entry in index.files:
@@ -729,10 +733,16 @@ def merge(root_dir : Path, branch_name : str, ask_for_comm_name : bool = True):
             last_commit_them = them_file.get_value_text()
     cur_branch_file = Pit_file(refs_heads / cur_branch)
     last_commit_us = cur_branch_file.get_value_text()
+    object_folder = root_dir / 'objects'
+    commit1_file = Commit.from_file(object_folder / last_commit_us)
+    commit2_file = Commit.from_file(object_folder / last_commit_them)
+    if commit1_file.brother == commit2_file.hash:
+        return False
+    if commit2_file.brother == commit1_file.hash:
+        return False
     if last_commit_them=='-1':
         #branch does not exist
         raise NonExistentBranch('Branch '+branch_name+' does not exist.')
-    object_folder = root_dir / 'objects'
     lca = find_common_ancestor(object_folder,last_commit_us,last_commit_them)
     if lca == last_commit_them:
         return 0
@@ -745,9 +755,7 @@ def merge(root_dir : Path, branch_name : str, ask_for_comm_name : bool = True):
     #here we have to do a 3-way merge
     #first I want a list of all files that are different in us and them
     #then i have to retrieve what they are in the lca commit
-    commit1_file = Commit.from_file(object_folder / last_commit_us)
     commit_us_tree = commit1_file.head_tree
-    commit2_file = Commit.from_file(object_folder / last_commit_them)
     commit_them_tree = commit2_file.head_tree
     commit3_file = Commit.from_file(object_folder / lca)
     lca_tree = commit3_file.head_tree
@@ -790,7 +798,25 @@ def merge(root_dir : Path, branch_name : str, ask_for_comm_name : bool = True):
                 file_compressed = file_opened.read()
             file_bytes = zlib.decompress(file_compressed)
             create_file(file_obj,file_bytes)
-    commit(root_dir,new_merge_commit)
+    commit_hash = commit(root_dir,new_merge_commit)
+    og_commit = Commit.from_file(root_dir / 'objects' / commit_hash)
+    if create_brother:
+        new_commit_changes : List[File_entry] = []
+        for change in all_changes:
+            if change[1]==change[3]:
+                if change[2]=='...':
+                    new_commit_changes.append(File_entry(name=change[0],only_exists=True,exists=False))
+                else:
+                    new_commit_changes.append(File_entry(name=change[0],only_exists=True,exists=True))
+        new_commit = Commit(object_file=(root_dir / 'objects' / '...'), 
+                            message=new_merge_commit,
+                            head_tree=og_commit.head_tree,
+                            num_changes=len(new_commit_changes),
+                            changes=new_commit_changes,
+                            father=last_commit_them,
+                            brother=commit_hash)
+        new_commit.write_to_file(fix=True)
+        them_file.write_value_from_text(new_commit.hash)
     return 2
 
 def iterate_tree(root_dir : Path, main_tree : str):
@@ -808,11 +834,21 @@ def put_content_after_clone(root_dir : Path):
     project_dir = root_dir.parent
     refs_heads = Pit_file(root_dir / 'refs' / 'heads' / 'Main')
     refs_heads_text = refs_heads.get_value_text()
-    last_commit_file = root_dir / 'objects' / refs_heads_text
-    last_commit = Commit.from_file(last_commit_file)
+    if refs_heads_text == '-':
+        objects_folder = root_dir / 'objects'
+        Main_tree = Tree(objects_folder / '...')
+        Main_tree.name = '.'
+        Main_tree.write_to_file(fix=True)
+        First_commit = Commit(object_file=(objects_folder / '...'),message='Created repository!',head_tree=Main_tree.hash,father='-')
+        First_commit.write_to_file(fix=True)
+        last_commit = First_commit
+        refs_heads.write_value_from_text(last_commit.hash)
+    else:
+        last_commit_file = root_dir / 'objects' / refs_heads_text
+        last_commit = Commit.from_file(last_commit_file)
     head_file = root_dir / 'HEAD'
     head_file.write_text('Main')
-    contents = List[list]
+    contents : List[list] = []
     index = Index(root_dir)
     if refs_heads_text != '-':
         main_tree = last_commit.head_tree
