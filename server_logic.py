@@ -148,7 +148,7 @@ def push(root_dir, host_num):
         if cur_commit == branch_head:
             return f'branch {cur_branch} is identical to localhost:{host_num}'
         lca = path_logic.find_common_ancestor(object_folder=root_dir / 'objects',commit1=cur_commit,commit2=branch_head)
-        if lca is not branch_head:
+        if lca != branch_head:
             return f'branch {cur_branch} has conflicting changes with localhost:{host_num}'
     print('Begining pushing.')
     zip_buffer = io.BytesIO()

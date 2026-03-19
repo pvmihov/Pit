@@ -52,6 +52,8 @@ def init(project_dir : Path):
     Main_commit = refs_heads_folder / 'Main'
     Main_commit.write_text(First_commit.hash)
     index_file = Index(dot_pit_folder)
+    index_file.number_of_trees = 1
+    index_file.trees.append(File_entry(name='.',hash=Main_tree.hash))
     index_file.write_to_file()
     return True
 
@@ -98,7 +100,7 @@ def add_file(root_dir : Path, file : Path):
         #we want to change exist property to false and changed property to true
         if index.number_of_files == 0: return # there arent blobs, so 
         position = index.find_file_in_index(file_name)
-        if position==0: return #the file wasnt in the index, so no need to do anything
+        if position==-1: return #the file wasnt in the index, so no need to do anything
         cur_file_entry = index.files[position]
         if cur_file_entry.name!=file_name: return #the file wasnt in the index
         #if we are here this means that the file is actually in index and we need to change the information
@@ -533,6 +535,8 @@ def status(root_dir : Path, file : Path):
     #returns the status of a file (untracked,changed but not commited, staged)
     project_dir = root_dir.parent
     index = Index.from_file(root_dir)
+    if index.number_of_files == 0:
+        return 'Untracked'
     file_name = str(file)
     name_dir = str(project_dir)
     if name_dir=='.': name_dir=''
@@ -734,15 +738,15 @@ def merge(root_dir : Path, branch_name : str, ask_for_comm_name : bool = True, c
     cur_branch_file = Pit_file(refs_heads / cur_branch)
     last_commit_us = cur_branch_file.get_value_text()
     object_folder = root_dir / 'objects'
+    if last_commit_them=='-1':
+        #branch does not exist
+        raise NonExistentBranch('Branch '+branch_name+' does not exist.')
     commit1_file = Commit.from_file(object_folder / last_commit_us)
     commit2_file = Commit.from_file(object_folder / last_commit_them)
     if commit1_file.brother == commit2_file.hash:
         return False
     if commit2_file.brother == commit1_file.hash:
         return False
-    if last_commit_them=='-1':
-        #branch does not exist
-        raise NonExistentBranch('Branch '+branch_name+' does not exist.')
     lca = find_common_ancestor(object_folder,last_commit_us,last_commit_them)
     if lca == last_commit_them:
         return 0
@@ -863,5 +867,8 @@ def put_content_after_clone(root_dir : Path):
             index.trees.append(File_entry(name=content[0],hash=content[1]))
     index.number_of_files = len(index.files)
     index.number_of_trees = len(index.trees)
+    if index.number_of_trees == 0:
+        index.number_of_trees = 1
+        index.trees.append(File_entry(name='.',hash=Main_tree.hash))
     index.write_to_file(sort_files=True,sort_trees=True)
     
