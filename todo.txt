@@ -20,8 +20,8 @@ DONE
 -rewriting path_logic so the code can be read by a human being
 -make merge into actual merge, by fixing father logic in Commit object
 -create empty commit into something so, that it doesnt bug logic
+-deal with ram problems
 CURRENT
 
 TODO
--deal with ram problems
 -add autocomplete to console (rewrite entire logic of main.cpp)

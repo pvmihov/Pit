@@ -4,9 +4,11 @@ import path_logic
 import urllib.request
 import urllib.error
 import zipfile
+import tempfile
 import io
 import random
 import string
+import shutil
 
 class ServerError(Exception):
     def __init__(self, message):
@@ -21,10 +23,11 @@ def clone(paste_dir,host_num):
             if response.status == 200:
                 #everything is super
                 print('Connection succeeded. Beggining cloning.')
-                zip_raw_files = response.read()
-                virt_file = io.BytesIO(zip_raw_files)
-                with zipfile.ZipFile(virt_file,'r') as zip_opened:
-                    zip_opened.extractall(paste_dir)
+                with tempfile.TemporaryFile() as temp_zip:
+                    shutil.copyfileobj(response,temp_zip)
+                    temp_zip.seek(0)
+                    with zipfile.ZipFile(temp_zip,'r') as zip_opened:
+                        zip_opened.extractall(paste_dir)
             else:
                 raise ServerError('Server returned wrong status.')
     except urllib.error.HTTPError:
@@ -40,10 +43,11 @@ def fetch(root_dir, host_num):
         with urllib.request.urlopen(request) as response:
             if response.status == 200:
                 print('Connection succeeded. Beggining fetching.')
-                zip_raw_files = response.read()
-                virt_file = io.BytesIO(zip_raw_files)
-                with zipfile.ZipFile(virt_file,'r') as zip_opened:
-                    zip_opened.extractall(root_dir)
+                with tempfile.TemporaryFile() as temp_zip:
+                    shutil.copyfileobj(response,temp_zip)
+                    temp_zip.seek(0)
+                    with zipfile.ZipFile(temp_zip,'r') as zip_opened:
+                        zip_opened.extractall(root_dir)
             else:
                 raise ServerError('Server returned wrong status.')
     except urllib.error.HTTPError:
@@ -150,41 +154,42 @@ def push(root_dir, host_num):
         lca = path_logic.find_common_ancestor(object_folder=root_dir / 'objects',commit1=cur_commit,commit2=branch_head)
         if lca != branch_head:
             return f'branch {cur_branch} has conflicting changes with localhost:{host_num}'
-    print('Begining pushing.')
-    zip_buffer = io.BytesIO()
-    objects_dir = root_dir / 'objects'
-    zip_buffer = io.BytesIO()
+    print('Begining zipping.')
     altered_anything = False
-    with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zip_opened:
-        for file_path in objects_dir.iterdir():
-            if file_path.is_file():
-                try:
-                    pit_file = Pit_file(file_path,True)
-                    hash = pit_file.sha1()
-                except Exception:
-                    print(f'File {file_path.name} was altered')
-                    altered_anything = True  
-                    continue                
-                if hash != file_path.name: 
-                    print(f'File {file_path.name} was altered')
-                    altered_anything = True
-                    continue #the file was altered and not created correctly
-                archive_path = f"objects/{file_path.name}"
-                zip_opened.write(file_path, archive_path)
-    if altered_anything:
-        return 'There are altered files in objects folder, so push will not be performed.'
-    zip_raw_bytes = zip_buffer.getvalue()
-    request = urllib.request.Request(url=f'http://localhost:{host_num}/push',data=zip_raw_bytes,headers={'content-type':'application/zip', 'X-Current-Branch': cur_branch, 'X-New-Last-Commit': cur_commit},method='POST')
-    try:
-        with urllib.request.urlopen(request) as response:
-            if response.status == 200:
-                return ''
-            else:
-                raise ServerError('Server returned wrong status.')
-    except urllib.error.HTTPError:
-        raise ServerError('Server failed to handle request.')  
-    except urllib.error.URLError:
-        raise ServerError('Failed to connect to server.')
+    objects_dir = root_dir / 'objects'
+    with tempfile.TemporaryFile() as temp_zip:
+        with zipfile.ZipFile(temp_zip, 'w', zipfile.ZIP_DEFLATED) as zip_opened:
+            for file_path in objects_dir.iterdir():
+                if file_path.is_file():
+                    try:
+                        pit_file = Pit_file(file_path, True)
+                        file_hash = pit_file.sha1()
+                    except Exception:
+                        print(f'File {file_path.name} was altered')
+                        altered_anything = True  
+                        continue     
+                    if file_hash != file_path.name: 
+                        print(f'File {file_path.name} was altered')
+                        altered_anything = True
+                        continue 
+                    archive_path = f"objects/{file_path.name}"
+                    zip_opened.write(file_path, archive_path)
+        if altered_anything:
+            return 'There are altered files in objects folder, so push will not be performed.'
+        temp_zip.seek(0)
+        request = urllib.request.Request(url=f'http://localhost:{host_num}/push',data=temp_zip,
+                                         headers={'content-type':'application/zip', 'X-Current-Branch': cur_branch, 'X-New-Last-Commit': cur_commit},method='POST')
+        print('Begining pushing.')
+        try:
+            with urllib.request.urlopen(request) as response:
+                if response.status == 200:
+                    return ''
+                else:
+                    raise ServerError('Server returned wrong status.')
+        except urllib.error.HTTPError:
+            raise ServerError('Server failed to handle request.')  
+        except urllib.error.URLError:
+            raise ServerError('Failed to connect to server.')
     
 def clone_branch(root_dir, branch_name, host_num):
     head_file_wanted = root_dir / 'refs' / 'heads' / branch_name

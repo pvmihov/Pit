@@ -42,13 +42,17 @@ class Pit_file:
             self.path_object.write_bytes(bytes)
     def sha1(self) -> str:
         hash = hashlib.sha1()
-        with self.path_object.open('rb') as curfile:
-            chunk = curfile.read()
-            if self.is_compr:
-                chunk_dec = zlib.decompress(chunk)
-                hash.update(chunk_dec)
-            else:
-                hash.update(chunk)
+        if self.is_compr:
+            decompressor = zlib.decompressobj()
+            with self.path_object.open('rb') as curfile:
+                while chunk := curfile.read(8192):
+                    decompressed_chunk = decompressor.decompress(chunk)
+                    hash.update(decompressed_chunk)
+            hash.update(decompressor.flush())
+        else:
+            with self.path_object.open('rb') as curfile:
+                while chunk := curfile.read(8192):
+                    hash.update(chunk)
         return hash.hexdigest()
     
     @classmethod

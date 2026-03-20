@@ -24,9 +24,13 @@ def create_blob(root_dir : Path, file : Path) -> str:
     blob = root_dir / 'objects' / hash
     if blob.exists():
         return hash
-    open_file = file.open('rb')
-    compressed_data = zlib.compress(open_file.read()) #has to be remade for big file openings
-    blob.write_bytes(compressed_data)
+    compressor = zlib.compressobj()
+    with file.open('rb') as f_in, blob.open('wb') as b_out:
+        while chunk := f_in.read(8192):
+            compressed_chunk = compressor.compress(chunk)
+            if compressed_chunk:
+                b_out.write(compressed_chunk)
+        b_out.write(compressor.flush())
     return hash
 
 def init(project_dir : Path):
@@ -230,9 +234,7 @@ def find_file(root_dir : Path, cur_tree : str, file_name : str):
         #this means we are searching for the file itself in the list of files
         for cur_entry in tree.files:
             if cur_entry.name!=file_name: continue
-            file = Pit_file(file_object=root_dir / 'objects' / cur_entry.hash, is_compr=True)
-            file_bytes = file.get_value_bytes()
-            return file_bytes
+            return cur_entry.hash
         return False
     else:
         #this means we are searching for a folder inside the list of folders
@@ -241,7 +243,7 @@ def find_file(root_dir : Path, cur_tree : str, file_name : str):
                 return find_file(root_dir,cur_entry.hash,file_name)
         return False
 
-def create_file(file : Path, bytes : bytes):
+def create_file(file : Path, blob : Path):
     unexist = []
     copy = file.parent
     while not copy.exists():
@@ -250,7 +252,13 @@ def create_file(file : Path, bytes : bytes):
     unexist.reverse()
     for un in unexist:
         un.mkdir()
-    file.write_bytes(bytes)
+    decompressor = zlib.decompressobj()
+    with blob.open('rb') as b_in, file.open('wb') as f_out:
+        while chunk := b_in.read(8192):
+            decompressed_chunk = decompressor.decompress(chunk)
+            if decompressed_chunk:
+                f_out.write(decompressed_chunk)
+        f_out.write(decompressor.flush())
 
 def retrieve(root_dir : Path, commit_name : str, file_name : str, create : bool, create_place : Path) -> bytes:
     #finds the file with file_name and the version it had after commit_name
@@ -268,11 +276,18 @@ def retrieve(root_dir : Path, commit_name : str, file_name : str, create : bool,
         last_commit = cur_commit.get_father()
     last_commit_file = Commit.from_file(object_file=(root_dir / 'objects' / last_commit))
     cur_tree = last_commit_file.head_tree
-    file_content = find_file(root_dir,cur_tree,file_name)
-    if file_content == False:
+    file_hash = find_file(root_dir,cur_tree,file_name)
+    if file_hash == False:
         raise UnableToRetrieve('There is no file '+file_name+' in the repository of commit '+commit_name+'.\n')
-    if create: create_file(file=create_place,bytes=file_content)
-    return file_content
+    if create: create_file(file=create_place,blob=(root_dir / 'objects' / file_hash))
+    else:
+        blob_obj = root_dir / 'objects' / file_hash
+        if blob_obj.stat().st_size > 300:
+            raise UnableToRetrieve(f'File {file_name} is too big to print as text\n')
+        with blob_obj.open('rb') as opened:
+            bytes1 = opened.read()
+        bytes_dec = zlib.decompress(bytes1)
+        return bytes_dec
 
 class UncommitedChanges(Exception):
     def __init__(self, message):
@@ -452,10 +467,7 @@ def checkout(root_dir : Path, branch_name : str) -> bool:
         if not change.exists:
             cur_file.unlink()
         else:
-            with (root_dir / 'objects' / change.blob).open('rb') as file_opened:
-                file_compressed = file_opened.read()
-            file_bytes = zlib.decompress(file_compressed)
-            create_file(cur_file,file_bytes)
+            create_file(cur_file,root_dir / 'objects' / change.blob)
     for change in changes:
         if change.type==0: continue
         if change.exists: continue
@@ -797,11 +809,8 @@ def merge(root_dir : Path, branch_name : str, ask_for_comm_name : bool = True, c
                 else: break
                 cname = get_folder(cname)
         else:
-            print(change[0])
-            with (root_dir / 'objects' / change[1]).open('rb') as file_opened:
-                file_compressed = file_opened.read()
-            file_bytes = zlib.decompress(file_compressed)
-            create_file(file_obj,file_bytes)
+            #print(change[0])
+            create_file(file_obj,root_dir / 'objects' / change[1])
     commit_hash = commit(root_dir,new_merge_commit)
     og_commit = Commit.from_file(root_dir / 'objects' / commit_hash)
     if create_brother:
@@ -860,9 +869,8 @@ def put_content_after_clone(root_dir : Path):
     for content in contents:
         if content[2]:
             index.files.append(File_entry(name=content[0],hash=content[1],has_bools=True,exists=True,changed=False))
-            blob_file = Pit_file(file_object=root_dir / 'objects' / content[1],is_compr=True)
             new_file = project_dir / content[0]
-            create_file(new_file,blob_file.get_value_bytes())
+            create_file(new_file,root_dir / 'objects' / content[1])
         else:
             index.trees.append(File_entry(name=content[0],hash=content[1]))
     index.number_of_files = len(index.files)
