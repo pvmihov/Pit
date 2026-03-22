@@ -6,12 +6,10 @@ Pit is a version control system (VCS), made as a learning project in
 - the concept behind git
 - basic server communication in python and node.js
 
-Currently the project only supports Linux
-
-# Setting up pit
+# Setting up pit on Linux
 
 To set up pit, we need the following steps:
-1. Either clone the repository, or install main.cpp, path_logic.py, communicator.py, run_server.js and package.json in the same folder and navigate to the folder
+1. Either clone the repository, or install main.cpp, path_logic.py, communicator.py, logic_classes.py, run_server.js and package.json in the same folder and navigate to the folder
 2. Open main.cpp and add the full path of the installation folder in the string called install_folder
 3. Run the following command to install python3 dev for embedding
 ```bash
@@ -25,6 +23,18 @@ g++ main.cpp -o pit $(python3-config --cflags --embed --libs)
 ```bash
 sudo cp pit /usr/local/bin
 ```
+
+# Setting up pit on Windows
+
+To set up pit, we need the following steps:
+1. Either clone the repository, or install main.cpp, path_logic.py, communicator.py, logic_classes.py, run_server.js and package.json in the same folder and navigate to the folder
+2. Open main.cpp and add the full path of the installation folder in the string called install_folder
+3. Install python development headers.
+4. Compile main.cpp with the neccessary python descriptions.
+```bash
+g++ main.cpp -o pit.exe $(python3-config --cflags --embed --libs)
+```
+5. Add the pit.exe to the path
 
 # Server simulation
 

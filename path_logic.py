@@ -67,10 +67,9 @@ def add_file(root_dir : Path, file : Path):
     #receives a path object called file and changes the index accordingly
     project_dir = root_dir.parent
     index = Index.from_file(root_dir)
-    file_name = str(file)
-    name_dir = str(project_dir)
+    name_dir = project_dir.as_posix()
     if name_dir=='.': name_dir=''
-    file_name = file_name.removeprefix(str(project_dir)+'/')
+    file_name = file.relative_to(project_dir).as_posix()
     if file.exists():
         #means file was updated
         hash = create_blob(root_dir,file)
@@ -490,8 +489,7 @@ def list_files_in_dir(root_dir : Path, folder_dir : Path, folder_name : str, pro
     #returns a list of all the files in a directory with their blobs
     answer = []
     for child in folder_dir.iterdir():
-        child_name = str(child)
-        child_name = child_name.removeprefix(project_name+'/')
+        child_name = child.relative_to(project_name).as_posix()
         if child.is_dir():
             new = list_files_in_dir(root_dir,child,child_name,project_name)
             for nnew in new: answer.append(nnew)
@@ -506,13 +504,13 @@ def add_folder(root_dir : Path, folder_dir : Path):
     #also checks for removed material, and flags it removed
     project_dir = root_dir.parent
     index = Index.from_file(root_dir)
-    folder_name = str(folder_dir)
-    name_dir = str(project_dir)
+    folder_name = folder_dir.as_posix()
+    name_dir = project_dir.as_posix()
     if (folder_name!=name_dir):
-        folder_name = folder_name.removeprefix(str(project_dir)+'/')
+        folder_name = folder_dir.relative_to(project_dir).as_posix()
     else:
         folder_name = ''
-    list_files = list_files_in_dir(root_dir,folder_dir,folder_name,str(project_dir))
+    list_files = list_files_in_dir(root_dir,folder_dir,folder_name,name_dir)
     begin = index.find_file_in_index(folder_name)+1
     end = begin
     for i in range(begin,index.number_of_files+1):
@@ -549,10 +547,9 @@ def status(root_dir : Path, file : Path):
     index = Index.from_file(root_dir)
     if index.number_of_files == 0:
         return 'Untracked'
-    file_name = str(file)
-    name_dir = str(project_dir)
+    name_dir = project_dir.as_posix()
     if name_dir=='.': name_dir=''
-    file_name = file_name.removeprefix(str(project_dir)+'/')
+    file_name = file.relative_to(project_dir).as_posix()
     position = index.find_file_in_index(file_name)
     cur_entry = index.files[position]
     if cur_entry.name!=file_name:
@@ -778,13 +775,14 @@ def merge(root_dir : Path, branch_name : str, ask_for_comm_name : bool = True, c
     if ask_for_comm_name: new_merge_commit = input('Feed forward merge cannot be performed. Enter commit message for 3-way-merge:\n')
     else: new_merge_commit = f'Merge commit for the temperary {cur_branch} with {branch_name}' 
     all_changes = find_all_changes(object_dir=object_folder,lca_tree=lca_tree,us_tree=commit_us_tree,them_tree=commit_them_tree)
-    project_dir_name = str(root_dir.parent)
+    project_dir_name = root_dir.parent.as_posix()
     do_change = []
     for change in all_changes:
         if change[1]!=change[2] and change[1]!=change[3]:
             raise ConflictingChanges('There are conflicting changes between the branches.')
         elif change[1]==change[2]:
-            cur_file = Path(project_dir_name+'/'+change[0])
+            cur_file = Path(project_dir_name)
+            cur_file = cur_file / change[0]
             if cur_file.exists():
                 cur_hash = sha1_file(cur_file)
                 if cur_hash!=change[2]:
@@ -796,7 +794,8 @@ def merge(root_dir : Path, branch_name : str, ask_for_comm_name : bool = True, c
     index.add_file_list_general(do_change)
     index.write_to_file()
     for change in do_change:
-        file_obj = Path(project_dir_name+'/'+change[0])
+        file_obj = Path(project_dir_name)
+        file_obj = file_obj / change[0]
         if (change[1]=='...'):
             file_obj.unlink()
             cname = get_folder(change[0])

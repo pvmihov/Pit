@@ -1,6 +1,7 @@
 import path_logic
 import server_logic
 from pathlib import Path
+import os
 
 def _find_root_folder(path):
     #receives path and goes recursively to its father, until it finds a repository
@@ -118,8 +119,7 @@ def _retrieve(folder_path, commit_name, file_path, loc_path):
     file = Path(file_path).resolve()
     if not file.is_relative_to(root_folder):
         return 'The path '+str(file)+' is not inside the repository.'
-    file_name = str(file)
-    file_name = file_name.removeprefix(str(root_folder)+'/')
+    file_name = str(file.relative_to(root_folder))
     if loc_path=="":
         try:
             result = path_logic.retrieve(root_dir=(root_folder / '.pit'),commit_name=commit_name,file_name=file_name,create=False,create_place=None)

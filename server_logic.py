@@ -172,7 +172,7 @@ def push(root_dir, host_num):
                         print(f'File {file_path.name} was altered')
                         altered_anything = True
                         continue 
-                    archive_path = f"objects/{file_path.name}"
+                    archive_path = str(Path("objects") / file_path.name).replace("\\", "/")
                     zip_opened.write(file_path, archive_path)
         if altered_anything:
             return 'There are altered files in objects folder, so push will not be performed.'

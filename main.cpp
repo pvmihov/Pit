@@ -3,6 +3,15 @@
 #include<filesystem>
 #include<Python.h>
 #include<cstdlib>
+#ifdef _WIN64
+#define os 1
+#elif _WIN32
+#define os 1
+#elif __linux__
+#define os 0
+#else
+#define os -1
+#endif
 std::string command_list[]={
     "help", "init", "add", "commit", "log", "restore" ,"retrieve", "checkout", "status", "show", "ls_tree", "branch",
     "merge", "clone", "fetch", "pull", "push", "clone_branch" ,"server",
@@ -29,13 +38,13 @@ std::string help_info[]={
     "Description: clone_branch copies a branch from the server repository by copying the objects and the head file.\nFormat: pit clone_branch <branch> <number>\nSpecifics: The command tries to contact localhost:<number>, the number must be within 1024 and 65535.",
     "Description: server launches a listener on localhost where the server information of a project will be stored.\nFormat: pit server <number>\nSpecifics: The command launches a listener on localhost:<number>, the number must be within 1024 and 65535.\nThe procces stores a .pit folder in the current directory from which it is called. Other network commands will use or affect the files in that .pit folder.",
 };
-const std::string install_folder="<install_folder>";
+const std::string install_folder="/home/petar/Documents/pit";
 const std::string node_file="/run_server.js";
 int callPython(std::string func_name, int numArgs, const char* args[])
 {
     Py_Initialize();
     PyRun_SimpleString("import sys");
-    std::string append_code = "sys.path.append('"+install_folder+"')";
+    std::string append_code = std::string("sys.path.append('") + install_folder + std::string("')");
     PyRun_SimpleString(append_code.c_str());
     PyObject* pName = PyUnicode_FromString("communicator");
     PyObject* pModule = PyImport_Import(pName);
@@ -80,23 +89,41 @@ int callPython(std::string func_name, int numArgs, const char* args[])
 std::filesystem::path home;
 std::filesystem::path get_path(std::filesystem::path current_path, char* name)
 {
-    if ((*name)=='/')
+    std::filesystem::path p(name);
+    if (os==0) ///Linux
     {
-        std::filesystem::path ans(name);
-        return ans;
+        if (p.is_absolute())
+        {
+            return p;
+        }
+        else if ((*name)=='~')
+        {
+            if (strlen(name)==1) return home;
+            else return (home / (name+2));
+        }
+        else return (current_path / name);
     }
-    else if ((*name)=='*')
+    else if (os==1) ///Windows
     {
-        if (strlen(name)==1) return home;
-        else return (home / (name+2));
+        if (p.is_absolute())
+        {
+            return p;
+        }
+        else return (current_path / name);
     }
-    else return (current_path / name);
 }
 int main(int argc, char* argv[])
 {
+    if (os==-1)
+    {
+        std::cout<<"You are using an unsupported operating system.\n";
+        return 0;
+    }
     std::filesystem::path current_path = std::filesystem::current_path();
     std::string current_path_string = current_path.string();
-    const char* home_str = std::getenv("HOME");
+    const char* home_str;
+    if (os==0) home_str=std::getenv("HOME");
+    else if (os==1) home_str=std::getenv("USERPROFILE");
     if (home_str) home=std::filesystem::path(home_str);
     else
     {
@@ -321,7 +348,7 @@ int main(int argc, char* argv[])
             return 0;      
         }
 
-        std::string command_for_node = "node "+install_folder+node_file+" "+current_path_string+" "+argv[2];
+        std::string command_for_node = "node \""+install_folder+node_file+"\" \""+current_path_string+"\" "+argv[2];
         std::system(command_for_node.c_str());
     }
     else if (strcmp(argv[1],"help")==0)
