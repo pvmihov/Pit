@@ -38,7 +38,7 @@ std::string help_info[]={
     "Description: clone_branch copies a branch from the server repository by copying the objects and the head file.\nFormat: pit clone_branch <branch> <number>\nSpecifics: The command tries to contact localhost:<number>, the number must be within 1024 and 65535.",
     "Description: server launches a listener on localhost where the server information of a project will be stored.\nFormat: pit server <number>\nSpecifics: The command launches a listener on localhost:<number>, the number must be within 1024 and 65535.\nThe procces stores a .pit folder in the current directory from which it is called. Other network commands will use or affect the files in that .pit folder.",
 };
-const std::string install_folder="/home/petar/Documents/pit";
+const std::string install_folder="<install_folder>";
 const std::string node_file="/run_server.js";
 int callPython(std::string func_name, int numArgs, const char* args[])
 {
